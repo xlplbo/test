@@ -15,8 +15,10 @@ int main()
     cout << str1 << endl;
 
     string a = "asdfgh";
-    string b = "hgasdf";
+    string b = "fghasd";
     cout << IsPermutation(a, b) << endl;
 
+	cout << IsRatation(a, b) << endl;
+	system("PAUSE");
     return 0;
 }

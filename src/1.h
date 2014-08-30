@@ -1,4 +1,5 @@
 #include <algorithm>
+
 //1.1
 //给定字符串是否有重复字符
 bool IsUniqueString(const char * des, int nSize)
@@ -43,3 +44,14 @@ bool IsPermutation(std::string &a, std::string &b)
     return true;
 }
 
+//1.8
+//是否为旋转字符
+bool IsRatation(std::string a, std::string b)
+{
+	if (a.length() != b.length())
+		return false;
+	std::string aa = a + a;
+	if (aa.find(b) != std::string::npos)
+		return true;
+	return false;
+}
