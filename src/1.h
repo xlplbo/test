@@ -55,3 +55,30 @@ bool IsRatation(std::string a, std::string b)
 		return true;
 	return false;
 }
+
+
+int CountZero(int n)
+{
+	unsigned long long nValue = 1;
+	for (int i = 2; i <= n; i++)
+	{
+		nValue *= i;
+	}
+	int nCount = 0;
+	while (0 == nValue % 10)
+	{
+		nCount++;
+		nValue /= 10;
+	}
+	return nCount;
+}
+
+int CountZero2(int n)
+{
+	int count = 0;
+	if (n < 0)
+		return -1;
+	for (int i = 5; n / i>0; i *= 5)
+		count += n / i;
+	return count;
+}

@@ -29,6 +29,16 @@ int main()
 	cdkeyDecrypt(result1, result);
 	cout << result1 << endl;
 
+	for (int i = 1; i <= 30; i++)
+	{
+		unsigned long long nValue = 1;
+		for (int j = 1; j <= i; j++)
+		{
+			nValue *= j;
+		}
+		cout << i << " " << nValue << " " << CountZero(i) << " " << CountZero2(i)  << endl;
+	}
+
 	system("PAUSE");
     return 0;
 }
