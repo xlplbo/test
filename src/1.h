@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdlib>
 
 //1.1
 //给定字符串是否有重复字符
@@ -81,4 +82,36 @@ int CountZero2(int n)
 	for (int i = 5; n / i>0; i *= 5)
 		count += n / i;
 	return count;
+}
+
+int MyRand(int low, int high)
+{
+	return low + rand() % (high - low + 1);
+}
+
+int* shuffle(int* cards, int n)
+{
+	if (n <= 0)
+		return cards;
+
+	shuffle(cards, n - 1);
+	int rand = MyRand(0, n);
+
+	int temp = cards[rand];
+	cards[rand] = cards[n];
+	cards[n] = temp;
+
+	return cards;
+}
+
+void shuffle2(int* cards, int n)
+{
+	// 随机i-1个的任意一个数与i交换
+	for (int i = 0; i < n; i++)
+	{
+		int rand = MyRand(0, i);
+		int temp = cards[rand];
+		cards[rand] = cards[i];
+		cards[i] = temp;
+	}
 }
