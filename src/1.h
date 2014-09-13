@@ -115,3 +115,35 @@ void shuffle2(int* cards, int n)
 		cards[i] = temp;
 	}
 }
+
+void* aligned_malloc(size_t size, size_t alignd_byte)
+{
+	//offset地址偏移量(byte)
+	//alignd_byte对齐字节的预分配空间
+	//sizeof(void *)保存真实指针的预分配空间
+	size_t offset = sizeof(void *) + alignd_byte - 1;
+
+	//预分配更大的内存块
+	//q指向这块内存的首地址
+	void* q = malloc(size + offset);
+	if (!q)
+		return NULL;
+	//printf("q = 0x%p\n", q);
+
+	//对齐后的内存块
+	//不管怎样q指针都向后偏移，再& ~(alignd_byte - 1)地址对齐
+	void* p = (void *)(((size_t)(q)+offset) & ~(alignd_byte - 1));
+	//为了配合free函数，保存q指针到p-1的位置
+	//p[-1] = q;直接这样做不行void *大小未知无法寻址
+	*(((void **)p) - 1) = q;
+
+	//返回对齐后的指针
+	return p;
+}
+
+void aligned_free(void* p)
+{
+	//计算原内存块的首地址
+	void* q = ((void **)p)[-1];
+	free(q);
+}

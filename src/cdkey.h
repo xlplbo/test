@@ -34,7 +34,7 @@ inline void cdkeySwapChars(char* sz)
 
 inline int cdKeyLocateIndex(char c)
 {
-	for (int i = 0; i < strlen(CK_MASK_TABLE); i++)
+	for (size_t i = 0; i < strlen(CK_MASK_TABLE); i++)
 	{
 		if (c == CK_MASK_TABLE[i])
 		{

@@ -3,6 +3,7 @@
 #include <string>
 #include "1.h"
 #include "cdkey.h"
+#include <stdio.h>
 
 using namespace std;
 
@@ -66,6 +67,41 @@ int main()
 		}
 	}
 	cout << endl;
+
+	//对齐内存分配
+	int size = 1234; //需要分配的内存大小（byte）
+	int alignment = 128; //地址对齐（byte）
+	void* p = NULL;
+	void* q = NULL;
+
+	int nCount = 0;//为了测试查找未alignment(byte)对齐的情况
+	while (1)
+	{
+		nCount++;
+		void* p = aligned_malloc(size, alignment); //  对齐后的
+		void* q = ((void **)p)[-1]; // 未处理过对齐的
+		if ((size_t)q % alignment != 0)
+		{//这次malloc不是alignment(byte)对齐
+			printf("p = %p, %d\n", p, (size_t)p % alignment);
+			printf("q = %p, %d\n", q, (size_t)q % alignment);
+			for (int i = 1; i <= size / sizeof(int); i++)
+			{
+				((int *)p)[i - 1] = i;
+			}
+			for (int i = 1; i <= size / sizeof(int); i++)
+			{
+				printf("%d  ", ((int *)p)[i - 1]);
+				if (i % 10 == 0)
+					printf("\n");
+			}
+			printf("\n");
+			aligned_free(p);
+			break;
+		}
+		aligned_free(p);
+	}
+	printf("nCount = %d\n", nCount);
+
 	system("PAUSE");
     return 0;
 }
