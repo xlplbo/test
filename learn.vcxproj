@@ -13,6 +13,7 @@
   <ItemGroup>
     <ClInclude Include="src\1.h" />
     <ClInclude Include="src\cdkey.h" />
+    <ClInclude Include="src\SmartPointer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
