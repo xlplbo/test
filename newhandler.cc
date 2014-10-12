@@ -99,8 +99,8 @@ int main(int argc, char* argv[])
   //  delete p;
   
   // 设置class Test的handler
-  //  Test::set_new_handler(OutofMemory);
-  //  Test* p = new Test[10000000000L];
+  Test::set_new_handler(OutofMemory);
+  Test* p = new Test[10000000000L];
   
   // 看看在哪里handler了
   //  Test::set_new_handler(OutofMemory);
