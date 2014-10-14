@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
   boost::scoped_array<CTest> pVecTest(new CTest[2]);
   pVecTest[0].SetId(111);
   pVecTest[0].DoSomething();
-
+ 
   // shared_ptr
   std::tr1::shared_ptr<CTest> pSt(new CTest);
   pSt->SetId(999);
@@ -59,13 +59,21 @@ int main(int argc, char* argv[])
   pSt3 = pSt2; // ok
   pSt3->DoSomething();
 
+  pSt = std::tr1::shared_ptr<CTest> (new CTest);
+  pSt->SetId(6666);
+  pSt->DoSomething();
+  
   // weak_ptr
   std::tr1::weak_ptr<CTest> pWt(pSt);
   std::tr1::shared_ptr<CTest> pWtlock = pWt.lock();
   // pWt->SetId(12345); // error weak_ptr can't used directly
   // pWt->DoSomething(); // error
-  pWtlock->SetId(12345);
-  pWtlock->DoSomething();
+  if (pWtlock == pSt)
+    {
+      std::cout << "pWt up to shared_ptr ok!\n"; 
+      pWtlock->SetId(12345);
+      pWtlock->DoSomething();
+    }
 
   // shared_array
   boost::shared_array<CTest> pVecSt(new CTest[2]);
