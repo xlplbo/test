@@ -4,69 +4,13 @@
 #include <string>
 #include "1.h"
 #include "cdkey.h"
-#include "SmartPointer.h"
+//#include "SmartPointer.h"
 
 using namespace std;
 
-//测试智能指针
-void test_SmartPointer()
+void main()
 {
-	struct MyStruct
-	{
-		int a;
-		int b;
-		MyStruct()
-		{
-			memset(this, 0, sizeof(MyStruct));
-			cout << "MyStruct structure!" << endl;
-		}
-		~MyStruct()
-		{
-			cout << "MyStruct destructor!" << endl;
-		}
-		void print()
-		{
-			cout << "a, b = " << a << ", " << b << endl;
-		}
-	};
-
-	CSmartPointer<MyStruct> ms1 = new MyStruct;
-	if (ms1)
-	{
-		ms1->a = 10;
-		ms1->b = 20;
-		ms1->print();
-	}
-	
-	CSmartPointer<MyStruct> ms2;
-	ms2 = ms1;
-	if (ms2)
-	{
-		ms2->a = 100;
-		ms2->b = 200;
-		ms2->print();
-	}
-	
-	CSmartPointer<MyStruct> ms3(ms2);
-	if (ms3)
-	{
-		ms3->a = 1000;
-		ms3->b = 2000;
-		ms3->print();
-	}
-	
-	CSmartPointer<MyStruct> ms(new MyStruct);
-	if (ms)
-	{
-		ms->a = 10000;
-		ms->b = 20000;
-		ms->print();
-	}
-}
-
-int main()
-{
-  //重复字符检查
+    //重复字符检查
     char* str = "asflsdkjqwpoeirp";
     cout << IsUniqueString(str, strlen(str)) << endl;
 
@@ -160,7 +104,7 @@ int main()
 	printf("nCount = %d\n", nCount);
 
 	//测试智能指针
-	test_SmartPointer();
+	//test_SmartPointer();
 
 	system("PAUSE");
     return 0;
