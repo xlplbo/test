@@ -28,6 +28,7 @@ public:
 
     CSmartPointer(T* ptr);
     CSmartPointer(CSmartPointer<T>& sp);
+    CSmartPointer<T>& operator =(T* ptr);
     CSmartPointer<T>& operator =(CSmartPointer<T>& sp);
  
     operator bool();
@@ -62,6 +63,7 @@ CSmartPointer<T>::~CSmartPointer()
 template <class T>
 CSmartPointer<T>::CSmartPointer(T* ptr)
 {
+  // printf("CSmartPointer<T>::CSmartPointer(T* ptr) %s\n", __FUNCTION__);
     m_ptr = ptr;
     m_pCountRef = new CRefCount;
     if (m_pCountRef)
@@ -71,6 +73,7 @@ CSmartPointer<T>::CSmartPointer(T* ptr)
 template <class T>
 CSmartPointer<T>::CSmartPointer(CSmartPointer<T>& sp)
 {
+  // printf("CSmartPointer<T>::CSmartPointer(CSmartPointer<T>& sp) %s\n", __FUNCTION__);
     m_ptr = sp.Get();
     m_pCountRef = sp.GetRef();
     if (m_pCountRef)
@@ -78,8 +81,25 @@ CSmartPointer<T>::CSmartPointer(CSmartPointer<T>& sp)
 }
 
 template <class T>
+CSmartPointer<T> & CSmartPointer<T>::operator =(T* ptr)
+{
+  // printf("CSmartPointer<T> & CSmartPointer<T>::operator =(T* ptr) %s\n", __FUNCTION__);
+    if (m_ptr == ptr)
+        return *this;
+ 
+    Remove();
+    m_ptr = ptr;
+    m_pCountRef = new CRefCount;
+    if (m_pCountRef)
+        m_pCountRef->AddRef();
+ 
+    return *this;
+}
+
+template <class T>
 CSmartPointer<T> & CSmartPointer<T>::operator =(CSmartPointer<T>& sp)
 {
+  //printf("CSmartPointer<T> & CSmartPointer<T>::operator =(CSmartPointer<T>& sp) %s\n", __FUNCTION__);
     if (this == &sp)
         return *this;
  
@@ -163,7 +183,8 @@ void test_SmartPointer()
         ms1->print();
     }
  
-    CSmartPointer<MyStruct> ms2 = ms1;
+    CSmartPointer<MyStruct> ms2;
+    ms2 = ms1;
     if (ms2)
     {
         ms2->a = 100;
@@ -177,6 +198,13 @@ void test_SmartPointer()
         ms3->a = 1000;
         ms3->b = 2000;
         ms3->print();
+    }
+    ms3 = new MyStruct;
+    if (ms3)
+    {
+        ms3->a = 3000;
+        ms3->b = 4000;
+        ms3->print(); 
     }
 
 }
