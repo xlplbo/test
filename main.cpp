@@ -105,7 +105,7 @@ void main()
 
 	//²âÊÔÖÇÄÜÖ¸Õë
 	//test_SmartPointer();
-
+	
 	system("PAUSE");
     return 0;
 }

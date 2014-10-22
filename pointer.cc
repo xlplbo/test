@@ -93,6 +93,7 @@ int main(int argc, char* argv[])
   pAt3->DoSomething();
   std::cout << "pAt = " << pAt.get() << std::endl; // !!! 
   std::cout << "pAt2 = " << pAt2.get() << std::endl;
+	pAt->DoSomething();
 
   
   return 0;
