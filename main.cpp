@@ -102,7 +102,7 @@ void main()
 		aligned_free(p);
 	}
 	printf("nCount = %d\n", nCount);
-
+	
 	//²âÊÔÖÇÄÜÖ¸Õë
 	//test_SmartPointer();
 	
