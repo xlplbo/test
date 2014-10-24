@@ -39,9 +39,11 @@ int main(int argc, char* argv[])
 		{
 			printf("child pid = %d create\n", getpid());
 			fd_read_write(conn);
-			printf("child pid = %d exit\n", getpid());
 			close(conn);
+			printf("child pid = %d exit\n", getpid());
+			break;
 		}
+		close(conn);
 	}
 	close(listenfd);
     return 0;
