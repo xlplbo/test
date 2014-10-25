@@ -2,7 +2,7 @@
 
 int main(int argc, char* argv[])
 {
-    int listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    int listenfd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
     if (listenfd < 0)
         ERR_EXIT("socket");
 
@@ -22,28 +22,43 @@ int main(int argc, char* argv[])
         ERR_EXIT("listen");
 	
 	signal(SIGCHLD, handler_child);
-    struct sockaddr_in peeraddr;
-    socklen_t peerlen = sizeof(peeraddr);
-
+    
+	fd_set rfds;
+	FD_ZERO(&rfds);
+	FD_SET(listenfd, &rfds);
 	while(1)
-    {
-        int conn = accept(listenfd, (struct sockaddr*)&peeraddr, &peerlen);
-        if (conn < 0)
-            ERR_EXIT("accept");
-
-        printf("ip=%s:%d\n", inet_ntoa(peeraddr.sin_addr), ntohs(peeraddr.sin_port));
-        pid_t pid = fork();
-        if (pid < 0)
-            ERR_EXIT("fork");
-        else if (pid == 0)
+	{	
+		int retval = select(listenfd+1, &rfds, NULL, NULL, NULL);
+		if (retval < 0)
 		{
-			printf("child pid = %d create\n", getpid());
-			fd_read_write(conn);
-			close(conn);
-			printf("child pid = %d exit\n", getpid());
-			break;
+			if (errno == EINTR)
+				continue;	
+			ERR_EXIT("select");
 		}
-		close(conn);
+		if (FD_ISSET(listenfd, &rfds))
+		{
+			struct sockaddr_in peeraddr;
+			socklen_t peerlen = sizeof(peeraddr);
+			int conn = accept(listenfd, (struct sockaddr*)&peeraddr, &peerlen);
+			if (conn < 0)
+				ERR_EXIT("accept");
+			
+			pid_t pid = fork();
+			if (pid < 0)
+				ERR_EXIT("fork");
+			else if (pid > 0)
+			{
+				printf("child pid %d create\n", pid);
+				continue;
+			}
+			else
+			{
+				printf("ip=%s:%d\n", inet_ntoa(peeraddr.sin_addr), ntohs(peeraddr.sin_port));
+				fd_read_write(conn);
+				shutdown(conn, SHUT_RDWR);
+				break;
+			}
+		}
 	}
 	close(listenfd);
     return 0;

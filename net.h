@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
+#include <errno.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/types.h>
@@ -19,7 +20,7 @@
 
 ssize_t readn(int fd, void *buf, size_t count)
 {
-    size_t left = count, npack;
+    size_t left = count;
     unsigned int* p = (unsigned int*)buf;
 
     while(left > 0)
@@ -32,11 +33,12 @@ ssize_t readn(int fd, void *buf, size_t count)
         p += nread;
         left -= nread;
     }
+	return -1;
 }
 
 ssize_t writen(int fd, const void *buf, size_t count)
 {
-    size_t left = count, npack;
+    size_t left = count;
     unsigned int* p = (unsigned int*)buf;
 
     while(left > 0)
@@ -49,6 +51,7 @@ ssize_t writen(int fd, const void *buf, size_t count)
         p += nwrite;
         left -= nwrite;
     }
+	return -1;
 }
 
 void fd_read_puts(int sockfd)
@@ -128,6 +131,7 @@ void fd_read_write(int conn)
 
 void handler_child(int sig)
 {
-	while(waitpid(-1, NULL, 0) > 0)
-		printf("waitpid %d exit, sig %d\n", getpid(), sig);
+	pid_t pid = 0;
+	while((pid = waitpid(-1, NULL, 0)) > 0)
+		printf("waitpid %d exit, sig %d\n", pid, sig);
 }
