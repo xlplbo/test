@@ -24,10 +24,10 @@ int main(int argc, char* argv[])
 	signal(SIGCHLD, handler_child);
     
 	fd_set rfds;
-	FD_ZERO(&rfds);
-	FD_SET(listenfd, &rfds);
 	while(1)
 	{	
+		FD_ZERO(&rfds);
+		FD_SET(listenfd, &rfds);
 		int retval = select(listenfd+1, &rfds, NULL, NULL, NULL);
 		if (retval < 0)
 		{

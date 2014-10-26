@@ -163,6 +163,9 @@ func FormartSrc()
     exec "e! %"
 endfunc
 "结束定义FormartSrc
+"开关目录树
+map <F7> :NERDTreeToggle<CR>
+imap <F7> <ESC> :NeRDTreeToggle<CR>
 "C,C++的调试
 map <F8> :call Rungdb()<CR>
 func! Rungdb()
