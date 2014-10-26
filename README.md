@@ -1,4 +1,3 @@
-TX
+test
 ==
-Testing Experience
-题目练习（C/C++）
+some test code and configuration files
