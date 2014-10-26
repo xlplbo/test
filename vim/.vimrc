@@ -115,10 +115,10 @@ map <F5> :call CompileRunGcc()<CR>
 func! CompileRunGcc()
 	exec "w"
 	if &filetype == 'c'
-		exec "!g++ % -o %<"
+		exec "!gcc -Wall % -o %<"
 		exec "!time ./%<"
 	elseif &filetype == 'cpp'
-		exec "!g++ % -o %<"
+		exec "!g++ -Wall % -o %<"
 		exec "!time ./%<"
 	elseif &filetype == 'java' 
 		exec "!javac %" 
@@ -164,8 +164,6 @@ func FormartSrc()
 endfunc
 "结束定义FormartSrc
 "开关目录树
-map <F7> :NERDTreeToggle<CR>
-imap <F7> <ESC> :NeRDTreeToggle<CR>
 "C,C++的调试
 map <F8> :call Rungdb()<CR>
 func! Rungdb()
