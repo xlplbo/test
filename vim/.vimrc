@@ -21,7 +21,7 @@ set statusline=%F%m%r%h%w\ [FORMAT=%{&ff}]\ [TYPE=%Y]\ [POS=%l,%v][%p%%]\ %{strf
 set laststatus=1    " 启动显示状态行(1),总是显示状态行(2)  
 set foldenable      " 允许折叠  
 set foldmethod=manual   " 手动折叠  
-"set background=dark "背景使用黑色 
+"set background=light "背景使用黑色 
 set nocompatible  "去掉讨厌的有关vi一致性模式，避免以前版本的一些bug和局限  
 " 显示中文帮助
 if version >= 603
@@ -29,7 +29,9 @@ if version >= 603
     set encoding=utf-8
 endif
 " 设置配色方案
-colorscheme desert
+"set t_Co = 256 "不支持putty不知道为啥
+"colorscheme desert   
+colorscheme darkburn
 "字体 
 "if (has("gui_running")) 
 "   set guifont=Bitstream\ Vera\ Sans\ Mono\ 10 
@@ -326,7 +328,7 @@ let Tlist_Exit_OnlyWindow = 1 "如果taglist窗口是最后一个窗口，则退
 let Tlist_Use_Right_Window = 1 "在右侧窗口中显示taglist窗口
 "let Tlist_WinHeith = 100
 "let Tlist_WinWidth = 30
-
+let NERDTreeShowHidden = 1 "显示隐藏文件
 """"""""""""""""""""""""""""""""""""''""""""""""""""""""""""""""""""""""""
 " minibufexpl插件的一般设置
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
