@@ -98,6 +98,7 @@ template<typename T> CMutex singleton<T>::m_Mutex;
 #ifndef _WIN32
 #include <unistd.h>
 #endif
+
 class CTest
 {
 public:
@@ -116,17 +117,20 @@ void* work(void * arg)
 		printf("CTest pointer = %p\n", p);
 		p->print();
 	}
+
 #ifndef _WIN32
 	sleep(5);
 #else
 	Sleep(5000);
 #endif
+
 	return NULL;
 }
 
 int main(int argc, char* argv[])
 {
 	const int MAX_COUNT = 10;
+
 #ifndef _WIN32
 	pthread_t p_id[MAX_COUNT];
 	for (int i = 0; i < MAX_COUNT; i ++)
@@ -149,6 +153,7 @@ int main(int argc, char* argv[])
 	}
 	WaitForMultipleObjects(MAX_COUNT, hThread, TRUE, INFINITE);
 #endif
+
 	return 1;
 }
 
