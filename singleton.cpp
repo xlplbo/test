@@ -79,19 +79,27 @@ public:
 		}
 		return m_pInst;
 	}
-	~singleton()
-	{
-		delete m_pInst;
-		m_pInst = NULL;
-	}
-private:
-	singleton();
+protected:
+    singleton(){}
+    virtual ~singleton(){}
 	static T* m_pInst;
 	static CMutex m_Mutex;
+
+private:
+	class C1234567
+	{
+	    ~C1234567()
+	    {
+	        delete m_pInst;
+	        m_pInst = NULL;
+	    }
+	};
+	static C1234567 m_C1234567;
 };
 
 template<typename T> T* singleton<T>::m_pInst = NULL;
 template<typename T> CMutex singleton<T>::m_Mutex;
+template<typename T> typename singleton<T>::C1234567 singleton<T>::m_C1234567;
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,66 +107,42 @@ template<typename T> CMutex singleton<T>::m_Mutex;
 #include <unistd.h>
 #endif
 
-class CTest
+class CTest : public singleton<CTest>
 {
 public:
+	CTest()
+	{
+		m_pVec = new char[1000];
+	}
+	~CTest()
+	{
+		delete[] m_pVec;
+		printf("----------CTest destruct-----------\n");
+	}
 	void print()
 	{
 		printf("CTest call print()\n");
 	}
-};
-
-class CTest1
-{
-public:
-	void print()
-	{
-		printf("CTest1 call print()\n");
-	}
+private:
+	char* m_pVec;
 };
 
 // 可重入函数
 void* work(void * arg)
 {
-	CTest* p = singleton<CTest>::GetInstance();
+	CTest* p = CTest::GetInstance();
 	if (p)
 	{
 		printf("CTest pointer = %p\n", p);
 		p->print();
 	}
 
-#ifndef _WIN32
-	sleep(5);
-#else
-	Sleep(5000);
-#endif
-
-	return NULL;
-}
-
-// 可重入函数
-void* work1(void * arg)
-{
-	CTest1* p = singleton<CTest1>::GetInstance();
-	if (p)
-	{
-		printf("CTest1 pointer = %p\n", p);
-		p->print();
-	}
-
-#ifndef _WIN32
-	sleep(5);
-#else
-	Sleep(5000);
-#endif
-
 	return NULL;
 }
 
 int main(int argc, char* argv[])
 {
-	const int MAX_COUNT = 10;
-
+    const int MAX_COUNT = 10;
 #ifndef _WIN32
 	pthread_t p_id[MAX_COUNT];
 	for (int i = 0; i < MAX_COUNT; i ++)
@@ -168,42 +152,21 @@ int main(int argc, char* argv[])
 			perror("pthread_create");
 			exit(0);
 		}
-		//printf("create thread id = %d\n", p_id[i]);
+		printf("create thread id = %d\n", p_id[i]);
 	}
 	for (int i = 0; i < MAX_COUNT; i ++)
 		pthread_join(p_id[i], NULL);
-
-    pthread_t p_id1[MAX_COUNT];
-	for (int i = 0; i < MAX_COUNT; i ++)
-	{
-		if (pthread_create(&p_id1[i], NULL, work1, NULL) != 0)
-		{
-			perror("pthread_create");
-			exit(0);
-		}
-		//printf("create thread id = %d\n", p_id1[i]);
-	}
-	for (int i = 0; i < MAX_COUNT; i ++)
-		pthread_join(p_id1[i], NULL);
 #else
 	HANDLE hThread[MAX_COUNT];
 	for (int i = 0; i < MAX_COUNT; i++)
 	{
 		hThread[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)work, NULL, 0, NULL);
-		//printf("create thread id = %d\n", hThread[i]);
+		printf("create thread id = %d\n", hThread[i]);
 	}
 	WaitForMultipleObjects(MAX_COUNT, hThread, TRUE, INFINITE);
-
-	HANDLE hThread1[MAX_COUNT];
-	for (int i = 0; i < MAX_COUNT; i++)
-	{
-		hThread1[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)work1, NULL, 0, NULL);
-		//printf("create thread id = %d\n", hThread1[i]);
-	}
-	WaitForMultipleObjects(MAX_COUNT, hThread1, TRUE, INFINITE);
 #endif
 
-	return 1;
+    return 0;
 }
 
 
