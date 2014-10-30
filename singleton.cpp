@@ -112,19 +112,16 @@ class CTest : public singleton<CTest>
 public:
 	CTest()
 	{
-		m_pVec = new char[1000];
+		printf("----------CTest construct----------\n");
 	}
 	~CTest()
 	{
-		delete[] m_pVec;
 		printf("----------CTest destruct-----------\n");
 	}
 	void print()
 	{
 		printf("CTest call print()\n");
 	}
-private:
-	char* m_pVec;
 };
 
 // 可重入函数
