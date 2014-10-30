@@ -168,7 +168,7 @@ int main(int argc, char* argv[])
 			perror("pthread_create");
 			exit(0);
 		}
-		printf("create thread id = %d\n", p_id[i]);
+		//printf("create thread id = %d\n", p_id[i]);
 	}
 	for (int i = 0; i < MAX_COUNT; i ++)
 		pthread_join(p_id[i], NULL);
@@ -181,7 +181,7 @@ int main(int argc, char* argv[])
 			perror("pthread_create");
 			exit(0);
 		}
-		printf("create thread id = %d\n", p_id1[i]);
+		//printf("create thread id = %d\n", p_id1[i]);
 	}
 	for (int i = 0; i < MAX_COUNT; i ++)
 		pthread_join(p_id1[i], NULL);
