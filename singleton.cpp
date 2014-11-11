@@ -79,19 +79,27 @@ public:
 		}
 		return m_pInst;
 	}
-	~singleton()
-	{
-		delete m_pInst;
-		m_pInst = NULL;
-	}
-private:
-	singleton();
+protected:
+    singleton(){}
+    virtual ~singleton(){}
 	static T* m_pInst;
 	static CMutex m_Mutex;
+
+private:
+	class C1234567
+	{
+	    ~C1234567()
+	    {
+	        delete m_pInst;
+	        m_pInst = NULL;
+	    }
+	};
+	static C1234567 m_C1234567;
 };
 
 template<typename T> T* singleton<T>::m_pInst = NULL;
 template<typename T> CMutex singleton<T>::m_Mutex;
+template<typename T> typename singleton<T>::C1234567 singleton<T>::m_C1234567;
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,9 +107,17 @@ template<typename T> CMutex singleton<T>::m_Mutex;
 #include <unistd.h>
 #endif
 
-class CTest
+class CTest : public singleton<CTest>
 {
 public:
+	CTest()
+	{
+		printf("----------CTest construct----------\n");
+	}
+	~CTest()
+	{
+		printf("----------CTest destruct-----------\n");
+	}
 	void print()
 	{
 		printf("CTest call print()\n");
@@ -111,26 +127,19 @@ public:
 // 可重入函数
 void* work(void * arg)
 {
-	CTest* p = (CTest*)singleton<CTest>::GetInstance();
+	CTest* p = CTest::GetInstance();
 	if (p)
 	{
 		printf("CTest pointer = %p\n", p);
 		p->print();
 	}
 
-#ifndef _WIN32
-	sleep(5);
-#else
-	Sleep(5000);
-#endif
-
 	return NULL;
 }
 
 int main(int argc, char* argv[])
 {
-	const int MAX_COUNT = 10;
-
+    const int MAX_COUNT = 10;
 #ifndef _WIN32
 	pthread_t p_id[MAX_COUNT];
 	for (int i = 0; i < MAX_COUNT; i ++)
@@ -154,7 +163,7 @@ int main(int argc, char* argv[])
 	WaitForMultipleObjects(MAX_COUNT, hThread, TRUE, INFINITE);
 #endif
 
-	return 1;
+    return 0;
 }
 
 
