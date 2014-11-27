@@ -62,6 +62,7 @@ int main(int argc, char* argv[])
 		std::cout << "expired" << std::endl;
 
 	// LambdasÄäÃûº¯Êı
+
 	system("PASUE");
 	return 0;
 }
