@@ -1,5 +1,4 @@
-﻿# hello.py
-#!/usr/bin/python
+﻿#!/usr/bin/python
 #-*- coding: utf-8 -*-
 
 #输出
@@ -410,5 +409,72 @@ print int('123')
 int2 = functools.partial(int, base=2)
 print int2('0110')
 
+#面向对象
+# class Student(object):
+# 	"""docstring for Student"""
+# 	__slots__ = ('__name', '__score')
+# 	def __init__(self, name, score):
+# 		super(Student, self).__init__()
+# 		self.__name = name
+# 		self.__score = score
+	
+# 	def print_score(self):
+# 		print '%s: %s' %(self.__name, self.__score)
 
+# bart = Student('Bart Simpson', 59)
+# lisa = Student('Lisa', 99)
+# bart.print_score()
+# lisa.print_score()
+
+#获取对象成员函数
+#print dir(Student)
+
+# @property装饰器
+class Student(object):
+	"""docstring for Student"""
+	def __init__(self, name, score):
+		super(Student, self).__init__()
+		self.__name = name
+		self.__score = score
+	
+	@property
+	def name(self):
+		return self.__name
+
+	@name.setter
+	def name(self, name):
+		self.__name = name
+
+	@property
+	def score(self):
+		return self.__score
+
+lishi = Student('Lishi', 87)
+print lishi.name
+lishi.name = 'wangwu'
+print lishi.name
+print lishi.score
+#AttributeError: can't set attribute
+# lishi.score = 99
+# print lishi.score
+
+#异常处理机制
+try:
+	print 'try...'
+	r = 10 / 0
+	print 'result:', r
+except ZeroDivisionError, e:
+	print 'except:', e
+finally:
+	print 'finally...'
+print 'END'
+
+#调试
+#print
+#assert
+#logging
+
+#with..as..语句
+#with open('C:/Users/liubo5/Desktop/test/python/hello.py', 'w') as f:
+#    f.write('Hello, world!')
 
