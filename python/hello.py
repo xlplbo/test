@@ -275,7 +275,7 @@ def function1(x):
 print map(function1, [1, 2, 3, 4, 5, 6])
 
 def fn1(s):
-	return map(lambda sz: sz[0].upper() + sz[1:].lower(), s)
+	return map(lambda sz: sz.capitalize(), s)
 
 print fn1(['ASIiaA', 'Swwa', 'aSWVsA'])
 
@@ -478,3 +478,49 @@ print 'END'
 #with open('C:/Users/liubo5/Desktop/test/python/hello.py', 'w') as f:
 #    f.write('Hello, world!')
 
+#成员运算符
+list2 = [1, 2, 3, 4, 5]
+if 2 in list2:
+	print 'YES'
+else:
+	print 'NO'
+if 6 not in list2:
+	print 'YES'
+else:
+	print 'NO'
+
+#身份运算符
+#!/usr/bin/python
+ 
+a = 20
+b = 20
+ 
+if ( a is b ):
+   print "Line 1 - a and b have same identity"
+else:
+   print "Line 1 - a and b do not have same identity"
+ 
+if ( id(a) == id(b) ):
+   print "Line 2 - a and b have same identity"
+else:
+   print "Line 2 - a and b do not have same identity"
+ 
+b = 30
+if ( a is b ):
+   print "Line 3 - a and b have same identity"
+else:
+   print "Line 3 - a and b do not have same identity"
+ 
+if ( a is not b ):
+   print "Line 4 - a and b do not have same identity"
+else:
+   print "Line 4 - a and b have same identity"
+
+for num in range(10,20):  #to iterate between 10 to 20
+   for i in range(2,num): #to iterate on the factors of the number
+      if num%i == 0:      #to determine the first factor
+         j=num/i          #to calculate the second factor
+         print '%d equals %d * %d' % (num,i,j)
+         break #to move to the next number, the #first FOR
+   else:                  # else part of the loop
+      print num, 'is a prime number'
