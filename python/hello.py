@@ -546,3 +546,47 @@ print "Employee.__name__:", Employee.__name__
 print "Employee.__module__:", Employee.__module__
 print "Employee.__bases__:", Employee.__bases__
 print "Employee.__dict__:", Employee.__dict__
+
+#字符反转
+astring = 'abcdefg hijk'
+print astring[::-1]
+print ' '.join(astring[::-1])
+
+#逐词反转
+import re
+atext = 'who are you'
+print ' '.join(re.split(r'\s+', atext)[::-1])
+print ' '.join(reversed(re.split(r'\s+', atext)))
+
+
+#搜索目录
+import os
+
+def search(d = '.', f = 0):
+	if os.path.isdir(d):
+		for  x in os.listdir(d):
+			childdir = os.path.join(d, x)
+			if os.path.isdir(childdir):
+				print '[ dir]', f, childdir
+				search(childdir, f+1)
+			elif os.path.isfile(childdir):
+				print '[file]', f, childdir
+	elif os.path.isfile(d):
+		print '[file]', f, d
+	return
+
+print 'PATH:'
+search('C:/Users/liubo5/Desktop/test/')
+
+
+#序列化
+try:
+	import cPickle as pickle
+except ImportError:
+	import pickle
+
+d = dict(name='Bob', age=20, score=80)
+print pickle.dumps(d)
+
+import json
+print json.dumps(d)
