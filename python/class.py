@@ -94,6 +94,18 @@ class Employer(Person, coding):
 	def __del__(self):
 		print 'Employer destruct!!!', self.name
 
+	def setSalary(self, value):
+		self.__salary = value
+
+	def getSalary(self):
+		return self.__salary
+
+	salary = property(getSalary, setSalary)
+
+	@staticmethod
+	def staticMethod():
+		print 'staticmethod test!'
+		
 def main():
 	#Person
 	p = Person('ZhangSan', 20)
@@ -121,6 +133,9 @@ def main():
 	#Employer
 	e = Employer('Lilei', 26, 'Python', 8000, '123456789', 'China')
 	e.infomation()
+	e.salary = 8888
+	e.infomation()
+	Employer.staticMethod()
 
 if __name__ == '__main__':
 	main()
