@@ -46,7 +46,7 @@ def isTextFile(ext):
 if __name__ == '__main__':
 	print '***********start code line static*************'
 	static()
-	print '****************static rezult*****************'
+	print '****************static result*****************'
 	sum = 0
 	for k,v in result.iteritems():
 		sum += v
