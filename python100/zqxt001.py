@@ -5,6 +5,7 @@
 　　　　　　掉不满足条件的排列。 
 2.程序源代码：
 '''
+
 for i in range(1,5):
     for j in range(1,5):
         for k in range(1,5):

@@ -2,6 +2,8 @@
 #-*- coding: utf-8 -*-
 
 import os
+import sys
+from timer import Timer
 
 result = {}
 def static(path = '.'):
@@ -45,7 +47,12 @@ def isTextFile(ext):
 
 if __name__ == '__main__':
 	print '***********start code line static*************'
-	static()
+	with Timer() as t:
+		if len(sys.argv) > 1 and sys.argv[1]:
+			static(sys.argv[1])
+		else:
+			static()
+	print "=> elasped lpop: %s s" % t.secs
 	print '****************static result*****************'
 	sum = 0
 	for k,v in result.iteritems():
