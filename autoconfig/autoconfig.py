@@ -219,7 +219,15 @@ class AutoConfig(object):
 				if not os.path.isfile(path):
 					self.log.error("parser client '%s' failed!" %path)
 					return False
-				return func(path)
+				func(path)
+				lines = []
+				with file(path, "r") as f:
+					for v in f.readlines():
+						lines.append(v.replace(" = ", "="))
+				with file(path, "w") as f:
+					for v in lines:
+						f.writelines(v)			
+				return True
 		self.log.error("can not find '%s'" %filename)
 		return False
 
@@ -236,7 +244,6 @@ class AutoConfig(object):
 		parser.set('Region_%d' %0, '%d_Address' %0, serverip)
 		with file(path, 'w') as f:
    			parser.write(f)
-		return True
 
 	def _parseClientConfig(self, path):
 		parser = ConfigParser.ConfigParser()
@@ -268,7 +275,6 @@ class AutoConfig(object):
 		parser.set("TIMEAMBIENT", "EVENING", "0,120,120,120")
 		with file(path, 'w') as f:
    			parser.write(f)
-		return True
 
 	def configClient(self):
 		self.log.info("================================================")
@@ -303,6 +309,11 @@ class AutoConfig(object):
 			self.log.info("here are %d file(s) need to move" %(len(filedict) - filecount))
 			filecount = len(filedict)
 			self._copyFolder(clvpath, dstPath)
+		if self._checkYesOrNO("do you need a chinese client?(y/N):"):
+			specialcatalog = self.configParser.get("client", "special_catalog").strip()
+			specialpath = os.path.join(resource, specialcatalog)
+			self.log.info("copy floders '%s' to '%s' ..." %(specialpath, dstPath))
+			self._copyFolder(specialpath, dstPath)
 		self._extractLibrary(dstPath)
 		self._extractFiles(dstPath, RC_CLIENT_LIST)
 		self._parseIniFile('server_list.ini', self._parseClientServerList, filedict, resource, catalog, dstPath)
