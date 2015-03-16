@@ -14,6 +14,7 @@ import ConfigParser
 import logging
 import shutil
 import stat
+import chardet
 
 RC_LOG_FILE = "autoconfig.log"
 RC_CONFIG_FILE = "config.ini"
@@ -21,7 +22,7 @@ RC_WINDOW_PACK = "library.zip"
 RC_COMMON_PACK = "data.zip" 
 RC_EXT_OR_ELF = ('.dll', '.exe', ".so", ".a", 'kg_goddess', 'kg_bishop', 'so2relay', 'so2gamesvr')
 RC_CLIENT_LIST = ('curl.exe', 'engine.dll', 'lualibdll.dll', 'represent3.dll', 'sound.dll', 'dumper.dll',
-			'dumpreport.exe', 'verify_up2date.exe', 'so2game.exe')
+			'dumpreport.exe', 'verify_up2date.exe', 'so2game.exe', 'rainbow.dll')
 
 class AutoConfig(object):
 	"""docstring for AutoConfig"""
@@ -29,7 +30,7 @@ class AutoConfig(object):
 		super(AutoConfig, self).__init__()
 		self.config = config
 		self.configParser = ConfigParser.ConfigParser()
-		self.configParser.readfp(codecs.open(config, "r", "utf-8-sig"))  
+		self.configParser.readfp(codecs.open(config, "r", self._getFileCoding(config)))  
 		self.log = logging.getLogger(__file__)
 		self.log.setLevel(logging.INFO)
 		formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
@@ -47,9 +48,15 @@ class AutoConfig(object):
 	def _isLinux(self):
 		return sys.platform.startswith('linux')
 
+	def _getFileCoding(self, filename):
+		charset = None
+		with file(filename, "r") as f:
+			charset = chardet.detect(f.read())
+		return charset['encoding']
+
 	def _checkFileExist(self, filename):
-		for file in os.listdir("."):
-			if os.path.isfile(file) and file == filename:
+		for v in os.listdir("."):
+			if os.path.isfile(v) and v == filename:
 				self.log.info("file '%s' is OK, continue..." %filename)
 				return True
 		self.log.warn("can not find '%s'" %filename)
@@ -65,12 +72,12 @@ class AutoConfig(object):
 			else:
 				title = "please input again(y/N):"
 
-	def _isProgramsAndLibrary(self, file):
-		vpath1 = os.path.splitext(file)
+	def _isProgramsAndLibrary(self, filename):
+		vpath1 = os.path.splitext(filename)
 		ext1 = vpath1[1].lower()
 		if ext1 in RC_EXT_OR_ELF:
 			return True
-		vpath2 = os.path.split(file)
+		vpath2 = os.path.split(filename)
 		ext2 = vpath2[1].lower()
 		if ext2 in RC_EXT_OR_ELF:
 			return True
@@ -171,64 +178,97 @@ class AutoConfig(object):
 	def _extractLibrary(self, path):
 		self.log.info("copy windows librarys to '%s'" %path)
 		zipFile = zipfile.ZipFile(RC_WINDOW_PACK, 'r', zipfile.ZIP_DEFLATED)
-		for file in zipFile.namelist():
-			zipFile.extract(file, path)
-			self.log.info("extract '%s' ..." %file)
+		for v in zipFile.namelist():
+			zipFile.extract(v, path)
+			self.log.info("extract '%s' ..." %v)
 
 	def _extractFiles(self, path, list):
 		self.log.info("copy programs and librarys to '%s'" %path)
 		zipFile = zipfile.ZipFile(RC_COMMON_PACK, 'r', zipfile.ZIP_DEFLATED)
 		extFile = []
-		for file in zipFile.namelist():
-			lfile = file.lower()
+		for v in zipFile.namelist():
+			lfile = v.lower()
 			lfiled = lfile.replace('d.', '.')
-			if lfile in list:
-				zipFile.extract(file, path)
+			if lfile in list and lfile not in extFile:
+				zipFile.extract(v, path)
 				extFile.append(lfile)
-				self.log.info("extract '%s' ..." %file)
-			elif lfiled in list:
-				zipFile.extract(file, path)
+				self.log.info("extract '%s' ..." %v)
+			elif lfiled in list and lfiled not in extFile:
+				zipFile.extract(v, path)
 				extFile.append(lfiled)
-				self.log.info("extract '%s' ..." %file)
-		for file in list:
-			if file not in extFile:
-				self.log.error("can not find '%s', please check '%s' file" %(file, RC_COMMON_PACK))
+				self.log.info("extract '%s' ..." %v)
+		for v in list:
+			if v not in extFile:
+				self.log.error("can not find '%s', please check '%s' file" %(v, RC_COMMON_PACK))
 
 	def _handlerError(self, func, path, excinfo):
 		os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
 		func(path)
 		self.log.info("Exception handling: %s %s" %(getattr(func, '__name__'), path))
 
-	def _parseClientServerList(self, filedict, srcdir, catalog, dstdir):
-		server_list = filedict.get('server_list.ini')
-		if not server_list:
-			self.log.error("can not find server_list.ini")
+	def _parseIniFile(self, filename, func, filedict, srcdir, catalog, dstdir):
+		filepath = filedict.get(filename)
+		if not filepath:
+			self.log.error("can not find '%s'" %filename)
 			return False
 		for v in catalog:
 			clv = os.path.join(srcdir, v)
-			if clv in server_list:
-				path = server_list.replace(clv, dstdir, 1)
+			if clv in filepath:
+				path = filepath.replace(clv, dstdir, 1)
 				self.log.info("parser client '%s'" %path)
 				if not os.path.isfile(path):
 					self.log.error("parser client '%s' failed!" %path)
-					return True
-				with file(path, 'w') as f:
-					f.truncate()
-					f.close()
-				parser = ConfigParser.RawConfigParser()
-				parser.readfp(codecs.open(path, "r", "utf-8-sig"))
-				parser.add_section('List')
-				parser.set('List', 'RegionCount', 1)
-				parser.set('List', 'Region_%d' %0, 'test_server%d' %1)
-				parser.add_section('Region_%d' %0)
-				parser.set('Region_%d' %0, 'count', 1)
-				parser.set('Region_%d' %0, '%d_Title' %0, 'test_server%d' %1)
-				parser.set('Region_%d' %0, '%d_Address' %0, self.configParser.get('client', 'serverip'))
-				with open(path, 'wb') as configfile:
-		   			parser.write(configfile)
-				return True
-		self.log.error("can not find server_list.ini")
+					return False
+				return func(path)
+		self.log.error("can not find '%s'" %filename)
 		return False
+
+	def _parseClientServerList(self, path):
+		parser = ConfigParser.ConfigParser()
+		parser.optionxform = str
+		parser.add_section('List')
+		parser.set('List', 'RegionCount', 1)
+		parser.set('List', 'Region_%d' %0, 'test_server%d' %1)
+		parser.add_section('Region_%d' %0)
+		parser.set('Region_%d' %0, 'Count', 1)
+		serverip = self.configParser.get('client', 'serverip')
+		parser.set('Region_%d' %0, '%d_Title' %0, serverip)
+		parser.set('Region_%d' %0, '%d_Address' %0, serverip)
+		with file(path, 'w') as f:
+   			parser.write(f)
+		return True
+
+	def _parseClientConfig(self, path):
+		parser = ConfigParser.ConfigParser()
+		parser.optionxform = str
+		parser.add_section("Server")
+		parser.set("Server", "GameServPort", 5622)
+		parser.set("Server", "ErrorReportAddress", "http://211.152.52.45/faq/xsj/jx2/external/accept.php")
+		parser.add_section("Client")
+		parser.set("Client", "FullScreen", 0)
+		parser.set("Client", "PaintFps", 100)
+		parser.set("Client", "PrerenderGround", 1)
+		parser.set("Client", "word_wrap", 1)
+		parser.set("Client", "text_justification", 0)
+		parser.set("Client", "install_fonts", 0)
+		parser.set("Client", "clear_text_background", 0)
+		parser.set("Client", "single_byte_char_set", 0)
+		parser.set("Client", "english_message", 1)
+		parser.set("Client", "enable_32bits_color", 1)
+		parser.add_section("dumper")
+		parser.set("dumper", "GameName", "Jx2Vn")
+		parser.set("dumper", "Version", "1.08")
+		parser.add_section("TIMEAMBIENT")
+		parser.set("TIMEAMBIENT", "MIDNIGHT", "0,120,150,180")
+		parser.set("TIMEAMBIENT", "DAWN", "0,150,160,190")
+		parser.set("TIMEAMBIENT", "MORNING", "0,225,225,225")
+		parser.set("TIMEAMBIENT", "FORENOON", "0,255,255,255")
+		parser.set("TIMEAMBIENT", "NOON", "0,255,255,255")
+		parser.set("TIMEAMBIENT", "DUSK", "0,215,215,215")
+		parser.set("TIMEAMBIENT", "EVENING", "0,120,120,120")
+		with file(path, 'w') as f:
+   			parser.write(f)
+		return True
 
 	def configClient(self):
 		self.log.info("================================================")
@@ -265,7 +305,8 @@ class AutoConfig(object):
 			self._copyFolder(clvpath, dstPath)
 		self._extractLibrary(dstPath)
 		self._extractFiles(dstPath, RC_CLIENT_LIST)
-		self._parseClientServerList(filedict, resource, catalog, dstPath)
+		self._parseIniFile('server_list.ini', self._parseClientServerList, filedict, resource, catalog, dstPath)
+		self._parseIniFile('config.ini', self._parseClientConfig, filedict, resource, catalog, dstPath)
 		self.log.info("==> config client finished!")
 
 	def configServer(self):
@@ -280,7 +321,7 @@ def main():
 		return False
 
 	#check parameters type
-	parser = OptionParser(usage="%%prog [-p|-c|-s] [config file] [log file]\nnotice: please configurate [%s] at first" %RC_CONFIG_FILE)
+	parser = OptionParser(usage="\n  %%prog <Options> [config] [log]\n  notice: please configurate [%s] at first" %RC_CONFIG_FILE)
 	parser.add_option(
 		"-p", "--packlibrary", action="store_true", dest="p", help="jv2 program and runtime librarys packaged")
 	parser.add_option(
