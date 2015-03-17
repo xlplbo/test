@@ -28,6 +28,7 @@ class AutoConfig(object):
 	"""docstring for AutoConfig"""
 	def __init__(self, config, log):
 		super(AutoConfig, self).__init__()
+		self.progress = 0
 		self.config = config
 		self.configParser = ConfigParser.ConfigParser()
 		self.configParser.readfp(codecs.open(config, "r", self._getFileCoding(config)))  
@@ -71,6 +72,13 @@ class AutoConfig(object):
 				return True
 			else:
 				title = "please input again(y/N):"
+
+	def _showProgress(self, step):
+		self.progress += 1
+		if step > 0:
+			index = self.progress // step
+			if index <= 10 and index * step == self.progress:
+				self.log.info("progress %d%%" %(index*10))
 
 	def _isProgramsAndLibrary(self, filename):
 		vpath1 = os.path.splitext(filename)
@@ -134,18 +142,18 @@ class AutoConfig(object):
 		self.log.info("==> packaged programs and librarys finished!")
 
 	def _getTreeDict(self, path, filedict):
-		if os.path.exists(path) and not os.path.isdir(path):
-			filedict[os.path.split(path)[1]] = path
+		if not os.path.isdir(path):
 			return
-		for x in os.listdir(path):
-			childdir = os.path.join(path, x)
-			if os.path.isdir(childdir):
-				self._getTreeDict(childdir, filedict) 
+		for name in os.listdir(path):
+			if '.svn' in name:
+				continue
+			childdir = os.path.join(path, name)
+			if not os.path.isdir(childdir):
+				filedict[childdir] = name
 			else:
-				filedict[x] = childdir
-		return
+				self._getTreeDict(childdir, filedict) 
 
-	def _copyFile(self, srcname, dstname):
+	def _copyFile(self, srcname, dstname, step = 0):
 		try:
 			if os.path.exists(dstname):
 				if os.path.isdir(dstname):
@@ -161,8 +169,11 @@ class AutoConfig(object):
 		except Exception, e:
 			self.log.error(str(e))
 		shutil.copystat(srcname, dstname)
+		self._showProgress(step)
 
-	def _copyFolder(self, src, dst):
+	def _copyFolder(self, src, dst, step = 0):
+		if not os.path.isdir(src):
+			return
 		if not os.path.exists(dst):
 			os.mkdir(dst)
 		for name in os.listdir(src):
@@ -171,9 +182,25 @@ class AutoConfig(object):
 			srcname = os.path.join(src, name)
 			dstname = os.path.join(dst, name)
 			if not os.path.isdir(srcname):
-				self._copyFile(srcname, dstname)
+				self._copyFile(srcname, dstname, step)
 			else:
-				self._copyFolder(srcname, dstname)
+				self._copyFolder(srcname, dstname, step)
+
+	def copyFolder(self, src, dst, filedict, filecount):
+		if not os.path.exists(src):
+			self.log.error("can not find '%s', please check '%s' file" %(src, self.config))
+			return len(filedict)
+		if not os.path.exists(dst):
+			self.log.error("can not find '%s', please check '%s' file" %(dst, self.config))
+			return len(filedict)
+		self.log.info("copy floders '%s' to '%s' ..." %(src, dst))
+		self._getTreeDict(src, filedict)
+		realcount = len(filedict) - filecount
+		step = (realcount - (realcount % 10)) // 10
+		self.progress = 0
+		self._copyFolder(src, dst, step)
+		self.log.info("actually %d file(s) have been copied" %self.progress)
+		return len(filedict)
 
 	def _extractLibrary(self, path):
 		self.log.info("copy windows librarys to '%s'" %path)
@@ -206,30 +233,27 @@ class AutoConfig(object):
 		func(path)
 		self.log.info("Exception handling: %s %s" %(getattr(func, '__name__'), path))
 
-	def _parseIniFile(self, filename, func, filedict, srcdir, catalog, dstdir):
-		filepath = filedict.get(filename)
-		if not filepath:
-			self.log.error("can not find '%s'" %filename)
+	def _parseIniFile(self, root, filename, func):
+		if self._isWondows():
+			root = root.replace("/", "\\")
+			filename = filename.replace("/", "\\")
+		if self._isLinux():
+			root = root.replace("\\", "/")
+			filename = filename.replace("\\", "/")
+		filepath = os.path.join(root, filename)
+		if not os.path.isfile(filepath):
+			self.log.error("can not find '%s'" %filepath)
 			return False
-		for v in catalog:
-			clv = os.path.join(srcdir, v)
-			if clv in filepath:
-				path = filepath.replace(clv, dstdir, 1)
-				self.log.info("parser client '%s'" %path)
-				if not os.path.isfile(path):
-					self.log.error("parser client '%s' failed!" %path)
-					return False
-				func(path)
-				lines = []
-				with file(path, "r") as f:
-					for v in f.readlines():
-						lines.append(v.replace(" = ", "="))
-				with file(path, "w") as f:
-					for v in lines:
-						f.writelines(v)			
-				return True
-		self.log.error("can not find '%s'" %filename)
-		return False
+		self.log.info("parser client '%s'" %filepath)
+		func(filepath)
+		lines = []
+		with file(filepath, "r") as f:
+			for v in f.readlines():
+				lines.append(v.replace(" = ", "="))
+		with file(filepath, "w") as f:
+			for v in lines:
+				f.writelines(v)			
+		return True
 
 	def _parseClientServerList(self, path):
 		parser = ConfigParser.ConfigParser()
@@ -282,13 +306,13 @@ class AutoConfig(object):
 		if self._isLinux() and not self._checkYesOrNO("do you config client on linux OS?(y/N):"):
 			self.log.info("config client on linux OS cancel by user!")
 			return False
-		dstPath = self.configParser.get("client", "home").strip()
-		if os.path.isdir(dstPath):
-			self.log.info("remove dir '%s' ..." %dstPath)
-			shutil.rmtree(dstPath, False, self._handlerError)		
+		root = self.configParser.get("client", "home").strip()
+		if os.path.isdir(root):
+			self.log.info("rmdir '%s' ..." %root)
+			shutil.rmtree(root, False, self._handlerError)		
 		try:		
-			self.log.info("mkdir '%s' ..." %dstPath)
-			os.makedirs(dstPath)
+			self.log.info("mkdir '%s' ..." %root)
+			os.makedirs(root)
 		except Exception, e:
 			self.log.error(str(e))
 			return False
@@ -301,27 +325,53 @@ class AutoConfig(object):
 		filecount = 0
 		for clv in catalog:
 			clvpath = os.path.join(resource, clv)
-			if not os.path.exists(clvpath):
-				self.log.error("can not find '%s', please check '%s' file" %(clvpath, self.config))
-				return False
-			self.log.info("copy floders '%s' to '%s' ..." %(clvpath, dstPath))
-			self._getTreeDict(clvpath, filedict)
-			self.log.info("here are %d file(s) need to move" %(len(filedict) - filecount))
-			filecount = len(filedict)
-			self._copyFolder(clvpath, dstPath)
+			filecount = self.copyFolder(clvpath, root, filedict, filecount)
 		if self._checkYesOrNO("do you need a chinese client?(y/N):"):
 			specialcatalog = self.configParser.get("client", "special_catalog").strip()
 			specialpath = os.path.join(resource, specialcatalog)
-			self.log.info("copy floders '%s' to '%s' ..." %(specialpath, dstPath))
-			self._copyFolder(specialpath, dstPath)
-		self._extractLibrary(dstPath)
-		self._extractFiles(dstPath, RC_CLIENT_LIST)
-		self._parseIniFile('server_list.ini', self._parseClientServerList, filedict, resource, catalog, dstPath)
-		self._parseIniFile('config.ini', self._parseClientConfig, filedict, resource, catalog, dstPath)
+			filecount = self.copyFolder(specialpath, root, filedict, filecount)
+		self._extractLibrary(root)
+		self._extractFiles(root, RC_CLIENT_LIST)
+		self._parseIniFile(root, "settings/server_list.ini", self._parseClientServerList)
+		self._parseIniFile(root, "config.ini", self._parseClientConfig)
 		self.log.info("==> config client finished!")
 
-	def configServer(self):
+	def _configGoddess(self, root, src):
 		pass
+
+	def _configBishop(self, root, src):
+		pass
+
+	def _configRelay(self, root, src):
+		pass
+
+	def _configGameSvr(self, root, src):
+		pass
+
+	def configServer(self):
+		self.log.info("================================================")
+		self.log.info("Prepare to config server!")
+		root = self.configParser.get("server", "home").strip()
+		if os.path.isdir(root):
+			self.log.info("rmdir '%s' ..." %root)
+			shutil.rmtree(root, False, self._handlerError)		
+		try:		
+			self.log.info("mkdir '%s' ..." %root)
+			os.makedirs(root)
+		except Exception, e:
+			self.log.error(str(e))
+			return False
+		resource = self.configParser.get("server", "resource").strip()
+		if not os.path.isdir(resource):
+			self.log.error("can not find '%s', please check '%s' file" %(resource, self.config))
+			return False
+		catalog = self.configParser.get("client", "catalog").split(',')
+		src = [os.path.join(resource, v) for v in catalog]
+		self._configGoddess(root, src)
+		self._configBishop(root, src)
+		self._configRelay(root, src)
+		self._configGameSvr(root, src)
+		self.log.info("==> config server finished!")
 
 def main():
 	#check python version
