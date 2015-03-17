@@ -15,6 +15,9 @@ import logging
 import shutil
 import stat
 import chardet
+import socket
+import fcntl
+import struct
 
 RC_LOG_FILE = "autoconfig.log"
 RC_CONFIG_FILE = "config.ini"
@@ -22,7 +25,11 @@ RC_WINDOW_PACK = "library.zip"
 RC_COMMON_PACK = "data.zip" 
 RC_EXT_OR_ELF = ('.dll', '.exe', ".so", ".a", 'kg_goddess', 'kg_bishop', 'so2relay', 'so2gamesvr')
 RC_CLIENT_LIST = ('curl.exe', 'engine.dll', 'lualibdll.dll', 'represent3.dll', 'sound.dll', 'dumper.dll',
-			'dumpreport.exe', 'verify_up2date.exe', 'so2game.exe', 'rainbow.dll')
+	'dumpreport.exe', 'verify_up2date.exe', 'so2game.exe', 'rainbow.dll')
+RC_GODDESS_LIST = ('engine.dll', 'heaven.dll', 'kg_angel.dll', 'kg_goddess.exe', 
+	'libmysql.dll', 'lualibdll.dll')
+RC_BISHOP_LIST = ('engine.dll', 'heaven.dll', 'kg_angel.dll', 'kg_goddess.exe', 'libmysql.dll', 'lualibdll.dll')
+RC_RELAY_LIST = ('engine.dll', 'kg_angel.dll', 'libmysql.dll', 'logdatabase.dll', 'lualibdll.dll', 'so2relay.exe')
 
 class AutoConfig(object):
 	"""docstring for AutoConfig"""
@@ -48,6 +55,19 @@ class AutoConfig(object):
 
 	def _isLinux(self):
 		return sys.platform.startswith('linux')
+
+	def _getLocalIp(self):
+		if self._isWondows():
+			return socket.gethostbyname(socket.gethostname())
+		if self._isLinux():
+			s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+			for x in ['eth0', 'wlan0', 'lo']:
+				try:
+					localip = socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, struct.pack('256s', x[:15]))[20:24])
+					self.log.info("assign requested address %s --> %s" %(x, localip))
+					return localip
+				except Exception, e:
+					self.log.error("%s --> %s" %(str(e), x))
 
 	def _getFileCoding(self, filename):
 		charset = None
@@ -79,6 +99,21 @@ class AutoConfig(object):
 			index = self.progress // step
 			if index <= 10 and index * step == self.progress:
 				self.log.info("progress %d%%" %(index*10))
+
+	def _handlerError(self, func, path, excinfo):
+		os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
+		func(path)
+		self.log.info("Exception handling: %s %s" %(getattr(func, '__name__'), path))
+
+	def _removeFileOrDir(self, path):
+		if os.path.exists(path):
+			if os.path.isdir(path):
+				shutil.rmtree(path, False, self._handlerError)
+			else:
+				os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
+				os.remove(path)
+			return True
+		return False
 
 	def _isProgramsAndLibrary(self, filename):
 		vpath1 = os.path.splitext(filename)
@@ -113,8 +148,7 @@ class AutoConfig(object):
 		if self._checkFileExist(name):
 			if self._checkYesOrNO("check file '%s' is exist! do you update this file?(y/N):" %name):
 				self.log.info("remove '%s' ..." %name)
-				os.chmod(name, stat.S_IREAD | stat.S_IWRITE)
-				os.remove(name)
+				self._removeFileOrDir(name)
 			else:
 				self.log.info("packaged finish! thanks all")
 				return True
@@ -155,12 +189,7 @@ class AutoConfig(object):
 
 	def _copyFile(self, srcname, dstname, step = 0):
 		try:
-			if os.path.exists(dstname):
-				if os.path.isdir(dstname):
-					shutil.rmtree(dstname, False, self._handlerError)
-				else:
-					os.chmod(dstname, stat.S_IREAD | stat.S_IWRITE)
-					os.remove(dstname)
+			self._removeFileOrDir(dstname)
 			if os.path.islink(srcname):
 				linkto = os.readlink(srcname)
 				os.symlink(linkto, dstname)
@@ -186,21 +215,18 @@ class AutoConfig(object):
 			else:
 				self._copyFolder(srcname, dstname, step)
 
-	def copyFolder(self, src, dst, filedict, filecount):
+	def copyFolder(self, src, dst):
 		if not os.path.exists(src):
 			self.log.error("can not find '%s', please check '%s' file" %(src, self.config))
-			return len(filedict)
 		if not os.path.exists(dst):
 			self.log.error("can not find '%s', please check '%s' file" %(dst, self.config))
-			return len(filedict)
 		self.log.info("copy floders '%s' to '%s' ..." %(src, dst))
+		filedict = {}
 		self._getTreeDict(src, filedict)
-		realcount = len(filedict) - filecount
-		step = (realcount - (realcount % 10)) // 10
+		step = (len(filedict) - (len(filedict) % 10)) // 10
 		self.progress = 0
 		self._copyFolder(src, dst, step)
 		self.log.info("actually %d file(s) have been copied" %self.progress)
-		return len(filedict)
 
 	def _extractLibrary(self, path):
 		self.log.info("copy windows librarys to '%s'" %path)
@@ -228,11 +254,6 @@ class AutoConfig(object):
 			if v not in extFile:
 				self.log.error("can not find '%s', please check '%s' file" %(v, RC_COMMON_PACK))
 
-	def _handlerError(self, func, path, excinfo):
-		os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
-		func(path)
-		self.log.info("Exception handling: %s %s" %(getattr(func, '__name__'), path))
-
 	def _parseIniFile(self, root, filename, func):
 		if self._isWondows():
 			root = root.replace("/", "\\")
@@ -243,7 +264,6 @@ class AutoConfig(object):
 		filepath = os.path.join(root, filename)
 		if not os.path.isfile(filepath):
 			self.log.error("can not find '%s'" %filepath)
-			return False
 		self.log.info("parser client '%s'" %filepath)
 		func(filepath)
 		lines = []
@@ -307,9 +327,8 @@ class AutoConfig(object):
 			self.log.info("config client on linux OS cancel by user!")
 			return False
 		root = self.configParser.get("client", "home").strip()
-		if os.path.isdir(root):
-			self.log.info("rmdir '%s' ..." %root)
-			shutil.rmtree(root, False, self._handlerError)		
+		if self._removeFileOrDir(root):
+			self.log.info("rmdir '%s' ..." %root)	
 		try:		
 			self.log.info("mkdir '%s' ..." %root)
 			os.makedirs(root)
@@ -321,29 +340,218 @@ class AutoConfig(object):
 			self.log.error("can not find '%s', please check '%s' file" %(resource, self.config))
 			return False
 		catalog = self.configParser.get("client", "catalog").split(',')
-		filedict = {}
-		filecount = 0
 		for clv in catalog:
 			clvpath = os.path.join(resource, clv)
-			filecount = self.copyFolder(clvpath, root, filedict, filecount)
+			self.copyFolder(clvpath, root)
 		if self._checkYesOrNO("do you need a chinese client?(y/N):"):
 			specialcatalog = self.configParser.get("client", "special_catalog").strip()
 			specialpath = os.path.join(resource, specialcatalog)
-			filecount = self.copyFolder(specialpath, root, filedict, filecount)
+			self.copyFolder(specialpath, root)
 		self._extractLibrary(root)
 		self._extractFiles(root, RC_CLIENT_LIST)
 		self._parseIniFile(root, "settings/server_list.ini", self._parseClientServerList)
 		self._parseIniFile(root, "config.ini", self._parseClientConfig)
 		self.log.info("==> config client finished!")
 
-	def _configGoddess(self, root, src):
-		pass
+	def _parseGoddessConfig(self, path):
+		localIp = self._getLocalIp()
+		parser = ConfigParser.ConfigParser()
+		parser.optionxform = str
+		parser.add_section('Version')
+		parser.set('Version', 'Version', 2)
+		parser.add_section('KG_Goddess')
+		parser.set('KG_Goddess', 'ListenIP', localIp)
+		parser.set('KG_Goddess', 'ListenPort', 5001)
+		parser.set('KG_Goddess', 'LoopSleepTime', 10)
+		parser.set('KG_Goddess', 'AutoDisconnectTime', 120000)
+		parser.set('KG_Goddess', 'SendRecvTimeout', 60000)
+		parser.set('KG_Goddess', 'Group', 1)
+		parser.set('KG_Goddess', 'MaxRoleCountInAccount', 9)
+		parser.add_section('DatabaseServer')
+		parser.set('DatabaseServer', 'Server', self.configParser.get("server", "mysql_ip"))
+		parser.set('DatabaseServer', 'UserName', self.configParser.get("server", "mysql_username"))
+		parser.set('DatabaseServer', 'Database', self.configParser.get("server", "mysql_database"))
+		parser.set('DatabaseServer', 'Password', self.configParser.get("server", "mysql_password"))
+		parser.set('DatabaseServer', 'EnableEncrypt', 0)
+		parser.add_section('RoleStatistic')
+		parser.set('RoleStatistic', 'ListenIP', localIp)
+		parser.set('RoleStatistic', 'ListenPort', 6001)
+		parser.set('RoleStatistic', 'SendRecvTimeout', 60000)
+		with file(path, 'w') as f:
+   			parser.write(f)
 
-	def _configBishop(self, root, src):
-		pass
+   	def _parseBishopConfig(self, path):
+   		localIp = self._getLocalIp()
+   		parser = ConfigParser.ConfigParser()
+		parser.optionxform = str
+		parser.add_section('Version')
+		parser.set('Version', 'Version', "bishop2")
+		parser.add_section('Paysys')
+		parser.set('Paysys', 'IPAddress', self.configParser.get("server", "paysys_ip"))
+		parser.set('Paysys', 'Port', self.configParser.get("server", "paysys_port"))
+		parser.set('Paysys', 'UserName', self.configParser.get("server", "paysys_username"))
+		parser.set('Paysys', 'Password', self.configParser.get("server", "paysys_password"))
+		parser.set('Paysys', 'SendRecvTimeout', 60000)
+		parser.set('Paysys', 'ReconnectTime', 10000)
+		parser.set('Paysys', 'LoopTime', 100)
+		parser.set('Paysys', 'PingTime', 10000)
+		parser.add_section('Goddess')
+		parser.set('Goddess', 'IPAddress', localIp)
+		parser.set('Goddess', 'LocalIPAddress', localIp)
+		parser.set('Goddess', 'Port', 5001)
+		parser.set('Goddess', 'SendRecvTimeout', 60000)
+		parser.set('Goddess', 'ReconnectTime', 10000)
+		parser.set('Goddess', 'LoopTime', 100)
+		parser.set('Goddess', 'PingTime', 20000)
+		parser.add_section('Relay')
+		parser.set('Relay', 'LocalIPAddress', localIp)
+		parser.set('Relay', 'OpenPort', 5632)
+		parser.set('Relay', 'SendRecvTimeout', 60000)
+		parser.set('Relay', 'LoopTime', 100)
+		parser.set('Relay', 'PingTime', 20000)
+		parser.set('Relay', 'AccountInRelayTimeout', 60000)
+		parser.add_section('GameServer')
+		parser.set('GameServer', 'LocalIPAddress', localIp)
+		parser.set('GameServer', 'OpenPort', 5633)
+		parser.set('GameServer', 'SendRecvTimeout', 180000)
+		parser.set('GameServer', 'AccountInManagerTimeout', 300000)
+		parser.set('GameServer', 'LoopTime', 100)
+		parser.set('GameServer', 'PingTime', 60000)
+		parser.add_section('Player')
+		parser.set('Player', 'LocalIPAddress', localIp)
+		parser.set('Player', 'OpenPort', 5622)
+		parser.set('Player', 'MaxPlayers', 16)
+		parser.set('Player', 'MaxPlayerInLoginSection', 10)
+		parser.set('Player', 'SendRecvTimeout', 180000)
+		parser.set('Player', 'PlayerOperateTimeout', 60000)
+		parser.set('Player', 'IBSupport', 1)
+		parser.add_section('LiveTimeLogger')
+		parser.set('LiveTimeLogger', 'LiveTimeLoggerLoopTime', 5000)
+		with file(path, 'w') as f:
+   			parser.write(f)
 
-	def _configRelay(self, root, src):
-		pass
+   	def _parseRelayConfig(self, path):
+   		localIp = self._getLocalIp()
+   		parser = ConfigParser.ConfigParser()
+		parser.optionxform = str
+		parser.add_section('Gmc')
+		parser.set('Gmc', 'Address', self.configParser.get("server", "paysys_ip"))
+		parser.set('Gmc', 'LocalAddr', localIp)
+		parser.set('Gmc', 'Port', 9991)
+		parser.set('Gmc', 'Enable', 0)
+		parser.set('Gmc', 'EncryptionType', 0)
+		parser.set('Gmc', 'ReConnInterval', 20000)
+		parser.set('Gmc', 'PingInterval', 90000)		
+		parser.add_section('Bishop')
+		parser.set('Bishop', 'Address', localIp)
+		parser.set('Bishop', 'LocalAddr', localIp)
+		parser.set('Bishop', 'Port', 5632)
+		parser.set('Bishop', 'Enable', 1)
+		parser.set('Bishop', 'EncryptionType', 0)
+		parser.set('Bishop', 'ReConnInterval', 20000)
+		parser.set('Bishop', 'PingInterval', 90000)
+		parser.add_section('Goddess')
+		parser.set('Goddess', 'Address', localIp)
+		parser.set('Goddess', 'LocalAddr', localIp)
+		parser.set('Goddess', 'Port', 5001)
+		parser.set('Goddess', 'Enable', 1)
+		parser.set('Goddess', 'EncryptionType', 0)
+		parser.set('Goddess', 'CheckConnInterval', 30000)
+		parser.add_section('Relay')
+		parser.set('Relay', 'PlayerCnt', 10)
+		parser.set('Relay', 'precision', 1)
+		parser.set('Relay', 'FreeBuffer', 15)
+		parser.set('Relay', 'BufferSize', 1048576)
+		parser.set('Relay', 'backup', 0)
+		parser.add_section('Host')
+		parser.set('Host', 'bLogSocket', 1)
+		parser.set('Host', 'LocalAddr', localIp)
+		parser.set('Host', 'ListenPort', 5003)
+		parser.set('Host', 'SendRecvTimeout', 60000)
+		parser.set('Host', 'LoopTime', 50)
+		parser.set('Host', 'PingTime', 60000)
+		parser.set('Host', 'PlayerCnt', 10)
+		parser.set('Host', 'Precision', 1)
+		parser.set('Host', 'FreeBuffer', 15)
+		parser.set('Host', 'BufferSize', 1048576)
+		parser.add_section('Chat')
+		parser.set('Chat', 'LocalAddr', localIp)
+		parser.set('Chat', 'ListenPort', 5004)
+		parser.set('Chat', 'SendRecvTimeout', 60000)
+		parser.set('Chat', 'LoopTime', 50)
+		parser.set('Chat', 'PlayerCnt', 10)
+		parser.set('Chat', 'Precision', 1)
+		parser.set('Chat', 'FreeBuffer', 15)
+		parser.set('Chat', 'BufferSize', 409600)
+		parser.add_section('Tong')
+		parser.set('Tong', 'LocalAddr', localIp)
+		parser.set('Tong', 'ListenPort', 5005)
+		parser.set('Tong', 'SendRecvTimeout', 60000)
+		parser.set('Tong', 'LoopTime', 50)
+		parser.set('Tong', 'PlayerCnt', 10)
+		parser.set('Tong', 'Precision', 1)
+		parser.set('Tong', 'FreeBuffer', 15)
+		parser.set('Tong', 'BufferSize', 1048576)
+		parser.set('Tong', 'flushinterval', 30)
+		parser.add_section('Log')
+		parser.set('Log', 'FacSayLog', 1)
+		parser.add_section('DataBase')
+		parser.set('DataBase', 'DBHost', self.configParser.get("server", "mysql_ip"))
+		parser.set('DataBase', 'DBName', self.configParser.get("server", "mysql_database"))
+		parser.set('DataBase', 'LogDBName', "%s_log" %self.configParser.get("server", "mysql_database"))
+		parser.set('DataBase', 'DBUser', self.configParser.get("server", "mysql_username"))
+		parser.set('DataBase', 'DBPwd', self.configParser.get("server", "mysql_password"))
+		parser.set('DataBase', 'DBGroup',1 )
+		parser.set('DataBase', 'DBPort', 3306)
+		parser.set('DataBase', 'EnableEncrypt', 0)
+		parser.add_section('GlobalDatabase')
+		parser.set('GlobalDatabase', 'Server', self.configParser.get("server", "mysql_ip"))
+		parser.set('GlobalDatabase', 'Database', "jx2vn_global_db")
+		parser.set('GlobalDatabase', 'User', self.configParser.get("server", "mysql_username"))
+		parser.set('GlobalDatabase', 'Password', self.configParser.get("server", "mysql_password"))
+		parser.set('GlobalDatabase', 'Port', 3306)
+		parser.set('GlobalDatabase', 'EnableEncrypt', 0)
+		parser.add_section('MyGlbDB')
+		parser.set('MyGlbDB', 'Server', self.configParser.get("server", "mysql_ip"))
+		parser.set('MyGlbDB', 'Database', "jx2vn_global_db")
+		parser.set('MyGlbDB', 'User', self.configParser.get("server", "mysql_username"))
+		parser.set('MyGlbDB', 'Password', self.configParser.get("server", "mysql_password"))
+		parser.set('MyGlbDB', 'Port', 3306)
+		parser.set('MyGlbDB', 'EnableEncrypt', 0)
+		with file(path, 'w') as f:
+   			parser.write(f)
+
+	def _configGoddess(self, dstPath):
+		self._extractFiles(dstPath, RC_GODDESS_LIST)
+		self._parseIniFile(dstPath, "KG_Goddess.ini", self._parseGoddessConfig)
+
+	def _configBishop(self, dstPath):
+		self._extractFiles(dstPath, RC_BISHOP_LIST)
+		self._parseIniFile(dstPath, "bishop.ini", self._parseBishopConfig)
+
+	def _configRelay(self, dstPath):
+		self._extractFiles(dstPath, RC_RELAY_LIST)
+		self._parseIniFile(dstPath, "relay.ini", self._parseRelayConfig)
+
+	def _configServer(self, name, root, src, func):
+		self.log.info("begin to config %s ..." %name)
+		dstPath = os.path.join(root, name)
+		if self._removeFileOrDir(dstPath):
+			self.log.info("remove '%s' ..." %dstPath)
+		try:
+			self.log.info("mkdir '%s' ..." %dstPath)
+			os.makedirs(dstPath)
+		except Exception, e:
+			self.log.error(str(e))
+			return False
+		srcPath = os.path.join(src, name)
+		if not os.path.isdir(srcPath):
+			self.log.error("can not find '%s' path" %srcPath)
+			return False
+		self.copyFolder(srcPath, dstPath)
+		self._extractLibrary(dstPath)
+		func(dstPath)
+		self.log.info("==> config %s finished!" %name)
 
 	def _configGameSvr(self, root, src):
 		pass
@@ -352,9 +560,8 @@ class AutoConfig(object):
 		self.log.info("================================================")
 		self.log.info("Prepare to config server!")
 		root = self.configParser.get("server", "home").strip()
-		if os.path.isdir(root):
+		if self._removeFileOrDir(root):
 			self.log.info("rmdir '%s' ..." %root)
-			shutil.rmtree(root, False, self._handlerError)		
 		try:		
 			self.log.info("mkdir '%s' ..." %root)
 			os.makedirs(root)
@@ -365,11 +572,11 @@ class AutoConfig(object):
 		if not os.path.isdir(resource):
 			self.log.error("can not find '%s', please check '%s' file" %(resource, self.config))
 			return False
-		catalog = self.configParser.get("client", "catalog").split(',')
+		catalog = self.configParser.get("server", "catalog").split(',')
 		src = [os.path.join(resource, v) for v in catalog]
-		self._configGoddess(root, src)
-		self._configBishop(root, src)
-		self._configRelay(root, src)
+		self._configServer("Goddess", root, src[0], self._configGoddess)
+		self._configServer("Bishop", root, src[0], self._configBishop)
+		self._configServer("Relay", root, src[0], self._configRelay)
 		self._configGameSvr(root, src)
 		self.log.info("==> config server finished!")
 
