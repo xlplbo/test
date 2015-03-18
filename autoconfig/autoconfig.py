@@ -16,30 +16,37 @@ import shutil
 import stat
 import chardet
 import socket
-import fcntl
-import struct
+import MySQLdb
+import cx_Oracle
+import uuid
+import time
 
 RC_LOG_FILE = "autoconfig.log"
 RC_CONFIG_FILE = "config.ini"
-RC_WINDOW_PACK = "library.zip"
+RC_WINDOW_PACK = "windll.zip"
 RC_COMMON_PACK = "data.zip" 
 RC_EXT_OR_ELF = ('.dll', '.exe', ".so", ".a", 'kg_goddess', 'kg_bishop', 'so2relay', 'so2gamesvr')
 RC_CLIENT_LIST = ('curl.exe', 'engine.dll', 'lualibdll.dll', 'represent3.dll', 'sound.dll', 'dumper.dll',
 	'dumpreport.exe', 'verify_up2date.exe', 'so2game.exe', 'rainbow.dll')
-RC_GODDESS_LIST = ('engine.dll', 'heaven.dll', 'kg_angel.dll', 'kg_goddess.exe', 
-	'libmysql.dll', 'lualibdll.dll')
-RC_BISHOP_LIST = ('engine.dll', 'heaven.dll', 'kg_angel.dll', 'kg_goddess.exe', 'libmysql.dll', 'lualibdll.dll')
-RC_RELAY_LIST = ('engine.dll', 'kg_angel.dll', 'libmysql.dll', 'logdatabase.dll', 'lualibdll.dll', 'so2relay.exe')
+RC_GODDESS_LIST = ('engine.dll', 'heaven.dll', 'kg_angel.dll', 'kg_goddess.exe', 'libmysql.dll', 
+	'lualibdll.dll', 'verify_up2date.exe')
+RC_BISHOP_LIST = ('engine.dll', 'heaven.dll', 'kg_angel.dll', 'kg_bishop.exe', 'libmysql.dll', 
+	'lualibdll.dll', 'verify_up2date.exe')
+RC_RELAY_LIST = ('engine.dll', 'kg_angel.dll', 'libmysql.dll', 'logdatabase.dll', 'lualibdll.dll', 
+	'so2relay.exe', 'verify_up2date.exe')
+RC_GAMESVR_LIST = ('engine.dll', 'heaven.dll', 'libmysql.dll', 'logdatabase.dll', 'lualibdll.dll', 'rainbow.dll',
+	'so2gamesvr.exe', 'verify_up2date.exe')
 
 class AutoConfig(object):
 	"""docstring for AutoConfig"""
 	def __init__(self, config, log):
 		super(AutoConfig, self).__init__()
 		self.progress = 0
+		self.paysys_regname = time.strftime('CP%Y%m%d%H%M%S',time.localtime(time.time()))
 		self.config = config
 		self.configParser = ConfigParser.ConfigParser()
 		self.configParser.readfp(codecs.open(config, "r", self._getFileCoding(config)))  
-		self.log = logging.getLogger(__file__)
+		self.log = logging.getLogger(log)
 		self.log.setLevel(logging.INFO)
 		formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
 		fh = logging.FileHandler(log, 'w')
@@ -60,6 +67,8 @@ class AutoConfig(object):
 		if self._isWondows():
 			return socket.gethostbyname(socket.gethostname())
 		if self._isLinux():
+			import fcntl
+			import struct
 			s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 			for x in ['eth0', 'wlan0', 'lo']:
 				try:
@@ -69,19 +78,16 @@ class AutoConfig(object):
 				except Exception, e:
 					self.log.error("%s --> %s" %(str(e), x))
 
+	def _getLocalMac(self):
+		node = uuid.getnode()
+		mac = uuid.UUID(int = node).hex[-12:]
+		return mac
+
 	def _getFileCoding(self, filename):
 		charset = None
 		with file(filename, "r") as f:
 			charset = chardet.detect(f.read())
 		return charset['encoding']
-
-	def _checkFileExist(self, filename):
-		for v in os.listdir("."):
-			if os.path.isfile(v) and v == filename:
-				self.log.info("file '%s' is OK, continue..." %filename)
-				return True
-		self.log.warn("can not find '%s'" %filename)
-		return False
 
 	def _checkYesOrNO(self, title):
 		while True:
@@ -112,8 +118,17 @@ class AutoConfig(object):
 			else:
 				os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
 				os.remove(path)
-			return True
-		return False
+			self.log.info("remove '%s' ..." %path)
+
+	def _makeDir(self, path):
+		try:
+			self._removeFileOrDir(path)
+			os.makedirs(path)
+			self.log.info("mkdir '%s' ..." %path)
+		except Exception, e:
+			self.log.error(str(e))
+			return False
+		return True
 
 	def _isProgramsAndLibrary(self, filename):
 		vpath1 = os.path.splitext(filename)
@@ -145,10 +160,11 @@ class AutoConfig(object):
 		self.log.info("================================================")
 		self.log.info("prepare to packaged programs and librarys!")
 		self.log.warn("please compile your project at first, and then run packaged program!")
-		if self._checkFileExist(name):
-			if self._checkYesOrNO("check file '%s' is exist! do you update this file?(y/N):" %name):
-				self.log.info("remove '%s' ..." %name)
+		for v in os.listdir("."):
+			if os.path.isfile(v) and v == name and \
+			self._checkYesOrNO("check file '%s' is exist! do you update this file?(y/N):" %name):
 				self._removeFileOrDir(name)
+				break
 			else:
 				self.log.info("packaged finish! thanks all")
 				return True
@@ -200,22 +216,22 @@ class AutoConfig(object):
 		shutil.copystat(srcname, dstname)
 		self._showProgress(step)
 
-	def _copyFolder(self, src, dst, step = 0):
+	def _copyFolder(self, src, dst, blacklist, step = 0):
 		if not os.path.isdir(src):
 			return
 		if not os.path.exists(dst):
 			os.mkdir(dst)
 		for name in os.listdir(src):
-			if '.svn' in name.strip():
+			if name.strip() in blacklist:
 				continue
 			srcname = os.path.join(src, name)
 			dstname = os.path.join(dst, name)
 			if not os.path.isdir(srcname):
 				self._copyFile(srcname, dstname, step)
 			else:
-				self._copyFolder(srcname, dstname, step)
+				self._copyFolder(srcname, dstname, blacklist, step)
 
-	def copyFolder(self, src, dst):
+	def copyFolder(self, src, dst, blacklist = []):
 		if not os.path.exists(src):
 			self.log.error("can not find '%s', please check '%s' file" %(src, self.config))
 		if not os.path.exists(dst):
@@ -225,15 +241,20 @@ class AutoConfig(object):
 		self._getTreeDict(src, filedict)
 		step = (len(filedict) - (len(filedict) % 10)) // 10
 		self.progress = 0
-		self._copyFolder(src, dst, step)
+		blacklist.append(".svn")
+		self._copyFolder(src, dst, map(lambda s: s.lower(), blacklist), step)
 		self.log.info("actually %d file(s) have been copied" %self.progress)
 
 	def _extractLibrary(self, path):
 		self.log.info("copy windows librarys to '%s'" %path)
 		zipFile = zipfile.ZipFile(RC_WINDOW_PACK, 'r', zipfile.ZIP_DEFLATED)
 		for v in zipFile.namelist():
-			zipFile.extract(v, path)
-			self.log.info("extract '%s' ..." %v)
+			try:
+				zipFile.extract(v, path)
+				self.log.info("extract '%s' ..." %v)
+			except Exception, e:
+				self.log.error(str(e))
+			
 
 	def _extractFiles(self, path, list):
 		self.log.info("copy programs and librarys to '%s'" %path)
@@ -242,14 +263,17 @@ class AutoConfig(object):
 		for v in zipFile.namelist():
 			lfile = v.lower()
 			lfiled = lfile.replace('d.', '.')
-			if lfile in list and lfile not in extFile:
-				zipFile.extract(v, path)
-				extFile.append(lfile)
-				self.log.info("extract '%s' ..." %v)
-			elif lfiled in list and lfiled not in extFile:
-				zipFile.extract(v, path)
-				extFile.append(lfiled)
-				self.log.info("extract '%s' ..." %v)
+			try:
+				if lfile in list and lfile not in extFile:
+					zipFile.extract(v, path)
+					extFile.append(lfile)
+					self.log.info("extract '%s' ..." %v)
+				elif lfiled in list and lfiled not in extFile:
+					zipFile.extract(v, path)
+					extFile.append(lfiled)
+					self.log.info("extract '%s' ..." %v)
+			except Exception, e:
+				self.log.error(str(e))			
 		for v in list:
 			if v not in extFile:
 				self.log.error("can not find '%s', please check '%s' file" %(v, RC_COMMON_PACK))
@@ -264,7 +288,7 @@ class AutoConfig(object):
 		filepath = os.path.join(root, filename)
 		if not os.path.isfile(filepath):
 			self.log.error("can not find '%s'" %filepath)
-		self.log.info("parser client '%s'" %filepath)
+		self.log.info("parser INI file '%s'" %filepath)
 		func(filepath)
 		lines = []
 		with file(filepath, "r") as f:
@@ -284,6 +308,8 @@ class AutoConfig(object):
 		parser.add_section('Region_%d' %0)
 		parser.set('Region_%d' %0, 'Count', 1)
 		serverip = self.configParser.get('client', 'serverip')
+		if not serverip or serverip == "0":
+			serverip = self._getLocalIp()
 		parser.set('Region_%d' %0, '%d_Title' %0, serverip)
 		parser.set('Region_%d' %0, '%d_Address' %0, serverip)
 		with file(path, 'w') as f:
@@ -294,7 +320,7 @@ class AutoConfig(object):
 		parser.optionxform = str
 		parser.add_section("Server")
 		parser.set("Server", "GameServPort", 5622)
-		parser.set("Server", "ErrorReportAddress", "http://211.152.52.45/faq/xsj/jx2/external/accept.php")
+		parser.set("Server", "ErrorReportAddress", "http://reporting.volam2.zing.vn")
 		parser.add_section("Client")
 		parser.set("Client", "FullScreen", 0)
 		parser.set("Client", "PaintFps", 100)
@@ -327,13 +353,7 @@ class AutoConfig(object):
 			self.log.info("config client on linux OS cancel by user!")
 			return False
 		root = self.configParser.get("client", "home").strip()
-		if self._removeFileOrDir(root):
-			self.log.info("rmdir '%s' ..." %root)	
-		try:		
-			self.log.info("mkdir '%s' ..." %root)
-			os.makedirs(root)
-		except Exception, e:
-			self.log.error(str(e))
+		if not self._makeDir(root):
 			return False
 		resource = self.configParser.get("client", "resource").strip()
 		if not os.path.isdir(resource):
@@ -343,9 +363,9 @@ class AutoConfig(object):
 		for clv in catalog:
 			clvpath = os.path.join(resource, clv)
 			self.copyFolder(clvpath, root)
-		if self._checkYesOrNO("do you need a chinese client?(y/N):"):
-			specialcatalog = self.configParser.get("client", "special_catalog").strip()
-			specialpath = os.path.join(resource, specialcatalog)
+		specialcatalog = self.configParser.get("client", "special_catalog").strip()
+		specialpath = os.path.join(resource, specialcatalog)
+		if os.path.exists(specialpath):
 			self.copyFolder(specialpath, root)
 		self._extractLibrary(root)
 		self._extractFiles(root, RC_CLIENT_LIST)
@@ -533,51 +553,195 @@ class AutoConfig(object):
 		self._extractFiles(dstPath, RC_RELAY_LIST)
 		self._parseIniFile(dstPath, "relay.ini", self._parseRelayConfig)
 
-	def _configServer(self, name, root, src, func):
-		self.log.info("begin to config %s ..." %name)
+	def _configGateway(self, name, root, resource, catalog, func):
+		self.log.info("==> begin to config %s ..." %name)
 		dstPath = os.path.join(root, name)
-		if self._removeFileOrDir(dstPath):
-			self.log.info("remove '%s' ..." %dstPath)
-		try:
-			self.log.info("mkdir '%s' ..." %dstPath)
-			os.makedirs(dstPath)
-		except Exception, e:
-			self.log.error(str(e))
+		if not self._makeDir(dstPath):
 			return False
+		src = [os.path.join(resource, v) for v in catalog][0]
 		srcPath = os.path.join(src, name)
 		if not os.path.isdir(srcPath):
 			self.log.error("can not find '%s' path" %srcPath)
 			return False
 		self.copyFolder(srcPath, dstPath)
+		specialpath = os.path.join(resource, self.configParser.get("server", "special_catalog"), name)
+		if not os.path.isdir(specialpath):
+			self.log.error("can not find '%s' path" %specialpath)
+			return False
+		self.copyFolder(specialpath, dstPath)
 		self._extractLibrary(dstPath)
 		func(dstPath)
 		self.log.info("==> config %s finished!" %name)
 
-	def _configGameSvr(self, root, src):
-		pass
+	def _parseGamesvr(self, path):
+		localIp = self._getLocalIp()
+		parser = ConfigParser.ConfigParser()
+		parser.optionxform = str
+		parser.add_section('Server')
+		parser.set('Server', 'ServerCount', 5)
+		parser.set('Server', 'ServerIndex', "1,2,3")
+		parser.set('Server', 'IS_KINGSOFT_INNER_VERSION_acc_jh34ji84r347e8T56', 0)
+		parser.set('Server', 'IS_EXP_SVR', 0)
+		parser.set('Server', 'IS_INTERNAL_TEST_SVR', 1)
+		parser.add_section('Gateway')
+		parser.set('Gateway', 'Ip', localIp)
+		parser.set('Gateway', 'Port', 5633)
+		parser.add_section('Database')
+		parser.set('Database', 'Ip', localIp)
+		parser.set('Database', 'Port', 5001)
+		parser.add_section('Transfer')
+		parser.set('Transfer', 'Ip', localIp)
+		parser.set('Transfer', 'Port', 5003)
+		parser.add_section('Chat')
+		parser.set('Chat', 'Ip', localIp)
+		parser.set('Chat', 'Port', 5004)
+		parser.add_section('Tong')
+		parser.set('Tong', 'Ip', localIp)
+		parser.set('Tong', 'Port', 5005)
+		parser.add_section('GameServer')
+		parser.set('GameServer', 'Port', 6667)
+		parser.set('GameServer', 'GM', 1)
+		parser.add_section('Net')
+		parser.set('Net', 'LocalIP', localIp)
+		parser.set('Net', 'ExternalIP', localIp)
+		parser.add_section('Overload')
+		parser.set('Overload', 'MaxPlayer', 2000)
+		parser.set('Overload', 'Precision', 50)
+		with file(path, 'w') as f:
+   			parser.write(f)
+
+	def _configGameSvr(self, root, resource, catalog):
+		name = "GameSvr"
+		self.log.info("==> begin to config %s ..." %name)
+		dstPath = os.path.join(root, name)
+		if not self._makeDir(dstPath):
+			return False
+		srcPath = os.path.join(resource, catalog[0], name)
+		if not os.path.isdir(srcPath):
+			self.log.error("can not find '%s' path" %srcPath)
+			return False
+		self.copyFolder(srcPath, dstPath)
+		srcData = os.path.join(resource, catalog[1], "data")
+		if not os.path.isdir(srcData):
+			self.log.error("can not find '%s' path" %srcData)
+			return False
+		dataPath = os.path.join(dstPath, "data")
+		if not self._makeDir(dataPath):
+			return False
+		blacklist = ['spr.pak.txt', 'spr.pak', 'resource.pak.txt', 'resource.pak', 'music.pak.txt', 
+			'maps_c.pak.txt', 'maps_c.pak', 'font_vn.pak', 'font_cn.pak', 'font.pak.txt', 'music.pak']
+		self.copyFolder(srcData, dataPath, blacklist)
+		settingsPath = os.path.join(resource, catalog[2])
+		if not os.path.isdir(settingsPath):
+			self.log.error("can not find '%s' path" %settingsPath)
+			return False
+		self.copyFolder(settingsPath, dstPath)
+		specialpath = os.path.join(resource, self.configParser.get("server", "special_catalog"), name)
+		if not os.path.isdir(specialpath):
+			self.log.error("can not find '%s' path" %specialpath)
+			return False
+		self.copyFolder(specialpath, dstPath)
+		self._extractLibrary(dstPath)
+		self._extractFiles(dstPath, RC_GAMESVR_LIST)
+		self._parseIniFile(dstPath, "servercfg.ini", self._parseGamesvr)
+		self._removeFileOrDir(os.path.join(dstPath, "dynamic_pwd.ini"))
+		self.log.info("==> config %s finished!" %name)
+
+	def _configMysql(self):
+		self.log.info("==> connect and operate mysql ...")
+		host = self.configParser.get("server", "mysql_ip")
+		user = self.configParser.get("server", "mysql_username")
+		passwd = self.configParser.get("server", "mysql_password")
+		db = self.configParser.get("server", "mysql_database")
+		port = self.configParser.getint("server", "mysql_port")
+		try:
+			conn = MySQLdb.connect(host=host, user=user, passwd=passwd, port=port)
+			cur = conn.cursor()
+			cur.execute('select @@version')
+			format = map(lambda x: x[0], cur.fetchall())
+			if len(format) > 0:
+				self.log.info("mysql version: '%s'" %format[0])
+				vret = format[0].split('.')
+				mainversion = int(vret[0])
+				subversion = int(vret[1])
+				if (mainversion == 5 and subversion > 1) or mainversion < 5:
+					self.log.error("mysql version is ERROR!!!, Version 5.1.69 is best" %data)
+					cur.close()
+					conn.close()
+					return False
+			cur.execute('show databases')
+			format = map(lambda x: x[0], cur.fetchall())
+			if db not in format:
+				cur.execute('create database if not exists %s' %db)
+				self.log.info("create database '%s' ..." %db)
+			self.log.info("find database '%s' OK!" %db)
+			if "%s_log" %db not in format:
+				cur.execute('create database if not exists %s' %("%s_log" %db))
+				self.log.info("create database '%s' ..." %("%s_log" %db))
+			self.log.info("find database '%s' OK!" %("%s_log" %db))
+			conn.commit()
+			cur.close()
+			conn.close()
+		except MySQLdb.Error, e:
+			self.log.error(str(e))
+			return False
+		self.log.info("==> connect and operate mysql finished!")
+		return True
+
+	def _configPaysys(self):
+		ora_ip = self.configParser.get("server", "paysys_ip")
+		ora_port = self.configParser.get("server", "ps_listen_port")
+		ora_server_name = self.configParser.get("server", "ps_server_name")
+		ora_dsn = cx_Oracle.makedsn(ora_ip, ora_port, ora_server_name)
+		username = self.configParser.get("server", "ps_manage_user")
+		password = self.configParser.get("server", "ps_manage_passwd")
+		localIp = self._getLocalIp()
+		localMac = self._getLocalMac()
+		try:
+			connection = cx_Oracle.Connection(username, password, ora_dsn)
+			cursor = connection.cursor()
+			cursor.execute("create sequence %s" %self.paysys_regname)
+			# cursor.execute('select %s.nextval from config_gateway' %self.paysys_regname)
+			# format = map(lambda x: int(x[0]), cursor.fetchall())
+			# print max(format)
+			sql = """insert into config_gateway(GATEWAY_ID, GATEWAY_NAME, ZONE_ID, PASSWORD, IP, MAC, STATE, RELAY_IP, DESCRIPTION) \
+				values(%s, '%s', 1, '%s', '%s', '%s', 0, '%s', 'insert by AutoConfig')"""
+			print(sql %('%s.nextval' %self.paysys_regname, self.paysys_regname, 'a', localIp, localMac, localIp))	
+			cursor.execute(sql %('%s.nextval' %self.paysys_regname, self.paysys_regname, 'a', localIp, "00-21-9B-3A-62-A1", localIp))
+			print cursor.fetchall()
+			# for x in cursor.fetchall():
+			#  	self.log.info(str(x)) 
+			# format = map(lambda x: x[0], cursor.fetchall())
+			# for x in format:
+			# 	cursor.execute("select * from %s" %x)
+			# 	print map(lambda x: x[0], cursor.fetchall())
+			cursor.execute("drop sequence %s" %self.paysys_regname)
+			connection.commit()
+			cursor.close()
+			connection.close()
+		except Exception, e:
+			self.log.error(str(e))		
 
 	def configServer(self):
 		self.log.info("================================================")
 		self.log.info("Prepare to config server!")
-		root = self.configParser.get("server", "home").strip()
-		if self._removeFileOrDir(root):
-			self.log.info("rmdir '%s' ..." %root)
-		try:		
-			self.log.info("mkdir '%s' ..." %root)
-			os.makedirs(root)
-		except Exception, e:
-			self.log.error(str(e))
-			return False
-		resource = self.configParser.get("server", "resource").strip()
-		if not os.path.isdir(resource):
-			self.log.error("can not find '%s', please check '%s' file" %(resource, self.config))
-			return False
-		catalog = self.configParser.get("server", "catalog").split(',')
-		src = [os.path.join(resource, v) for v in catalog]
-		self._configServer("Goddess", root, src[0], self._configGoddess)
-		self._configServer("Bishop", root, src[0], self._configBishop)
-		self._configServer("Relay", root, src[0], self._configRelay)
-		self._configGameSvr(root, src)
+		# if not self._configMysql() and not self._checkYesOrNO("mysql operation failed, continue?(y/N):"):
+		# 	self.log.info("user cancelled!!!")
+		# 	return True
+		# return
+		# root = self.configParser.get("server", "home").strip()
+		# if not self._makeDir(root):
+		# 	return False
+		# resource = self.configParser.get("server", "resource").strip()
+		# if not os.path.isdir(resource):
+		# 	self.log.error("can not find '%s', please check '%s' file" %(resource, self.config))
+		# 	return False
+		# catalog = self.configParser.get("server", "catalog").split(',')
+		# self._configGateway("Goddess", root, resource, catalog, self._configGoddess)
+		# self._configGateway("Bishop", root, resource, catalog, self._configBishop)
+		# self._configGateway("Relay", root, resource, catalog, self._configRelay)
+		# self._configGameSvr(root, resource, catalog)
+		self._configPaysys()
 		self.log.info("==> config server finished!")
 
 def main():

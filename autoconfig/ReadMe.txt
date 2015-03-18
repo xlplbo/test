@@ -9,3 +9,5 @@
 
 4,config.ini配置文件
 运行配置工具当然要先把config.ini配置正确（包括配置指向的环境），不然就是白搭
+
+python setup.py py2exe
