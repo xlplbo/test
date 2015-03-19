@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # coding:utf-8
-import netifaces
+# import netifaces
 
 def _getLocalIp(self):
     import sys
@@ -25,17 +25,17 @@ def _getLocalMac(self):
     mac = uuid.UUID(int = node).hex[-12:].upper()
     return "%s-%s-%s-%s-%s-%s" %(mac[:2], mac[2:4], mac[4:6], mac[6:8], mac[8:10], mac[10:12])
 
-def _getNetInterface(self):
-    import netifaces
-    for dev in netifaces.interfaces():
-        infos = netifaces.ifaddresses(dev)
-        if len(infos) < 2:
-            continue
-        ip = infos[netifaces.AF_INET][0]['addr']
-        mac = infos[netifaces.AF_LINK][0]['addr']
-        if len(ip) > 0 and ip != "127.0.0.1" and len(mac) > 0:
-            return (ip, mac.upper().replace(":", "-"))
-    return None
+# def _getNetInterface(self):
+#     import netifaces
+#     for dev in netifaces.interfaces():
+#         infos = netifaces.ifaddresses(dev)
+#         if len(infos) < 2:
+#             continue
+#         ip = infos[netifaces.AF_INET][0]['addr']
+#         mac = infos[netifaces.AF_LINK][0]['addr']
+#         if len(ip) > 0 and ip != "127.0.0.1" and len(mac) > 0:
+#             return (ip, mac.upper().replace(":", "-"))
+#     return None
 
 import os
 
@@ -75,3 +75,6 @@ from win32com.shell import shell
     
 # if __name__ == "__main__":
 #     set_shortcut("C:\\Users\\liubo5\\Desktop\\test\\autoconfig","C:\\Users\\liubo5\\Desktop\\test\\data")
+
+s = "er"
+print s, len(s)

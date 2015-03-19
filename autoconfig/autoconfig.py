@@ -19,7 +19,8 @@ import MySQLdb
 import cx_Oracle
 import random
 import string
-import netifaces
+import socket
+import uuid
 import hashlib
 
 RC_LOG_FILE = "autoconfig.log"
@@ -45,6 +46,8 @@ class AutoConfig(object):
 		super(AutoConfig, self).__init__()
 		self.paysys_regname = ''.join(random.sample(string.ascii_letters, 8))
 		self.paysys_regpasswd = "a"
+		self.localIp = self._getLocalIp()
+		self.localMac = self._getLocalMac()
 		self.config = config
 		self.configParser = ConfigParser.ConfigParser()
 		self.configParser.readfp(codecs.open(config, "r", self._getFileCoding(config)))  
@@ -65,17 +68,26 @@ class AutoConfig(object):
 	def _isLinux(self):
 		return sys.platform.startswith('linux')
 
-	def _getNetInterface(self):
-		for dev in netifaces.interfaces():
-			infos = netifaces.ifaddresses(dev)
-			if len(infos) < 2:
-				continue
-			ip = infos[netifaces.AF_INET][0]['addr']
-			mac = infos[netifaces.AF_LINK][0]['addr']
-			if len(ip) > 0 and ip != "127.0.0.1" and len(mac) > 0:
-				return (ip, mac.upper().replace(":", "-"))
-		self.log.error("can not get net interfaces information, abort")
-		exit()
+	def _getLocalIp(self):
+		if self._isWondows():
+			return socket.gethostbyname(socket.gethostname())
+		if self._isLinux():
+			import fcntl
+			import struct
+			s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+			for x in ['eth0', 'wlan0', 'lo']:
+				try:
+					localip = socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, struct.pack('256s', x[:15]))[20:24])
+					self.log.info("assign requested address %s --> %s" %(x, localip))
+					return localip
+				except Exception, e:
+					self.log.error("%s --> %s" %(str(e), x))
+			exit()
+
+	def _getLocalMac(self):
+		node = uuid.getnode()
+		mac = uuid.UUID(int = node).hex[-12:].upper()
+		return "%s-%s-%s-%s-%s-%s" %(mac[:2], mac[2:4], mac[4:6], mac[6:8], mac[8:10], mac[10:12])
 
 	def _getFileCoding(self, filename):
 		charset = None
@@ -93,6 +105,43 @@ class AutoConfig(object):
 			else:
 				title = "please input again(y/N):"
 
+	def checkIpCorrectness(self):
+		self.log.info("local machine IP: '%s'" %self.localIp)
+		if self._checkYesOrNO("if the IP is false, please correct it! do you want to modify?(y/N)"):
+			while True:
+				msg = "please input IP:"
+				ip = raw_input(msg)
+				ipformat = ip.split('.')
+				if len(ipformat) != 4 or len(filter(lambda x: x >= 0 and x <= 255, map(int, filter(lambda x: x.isdigit(), ipformat)))) != 4:
+					self.log.error("does not conform to the rules, input again!")
+					continue
+				if self._checkYesOrNO("your IP is '%s', right?(y/N):" %ip):
+					self.localIp = ip
+					break
+
+	def _macFilter(self, s):
+		if len(s) != 2:
+			return False
+		if s[0] not in string.ascii_uppercase and s[0] not in string.digits:
+			return False
+		if s[1] not in string.ascii_uppercase and s[1] not in string.digits:
+			return False
+		return True
+
+	def checkMacCorrectness(self):
+		self.log.info("local machine MAC: '%s'" %self.localMac)
+		if self._checkYesOrNO("if the MAC is false, please correct it! do you want to modify?(y/N)"):
+			while True:
+				msg = "please input MAC(use upper case):"
+				mac = raw_input(msg)
+				macformat = mac.split('-')
+				if len(macformat) != 6 or len(filter(self._macFilter, macformat)) != 6:
+					self.log.error("does not conform to the rules, input again!")
+					continue
+				if self._checkYesOrNO("your MAC is '%s', right?(y/N):" %mac):
+					self.localMac = mac
+					break
+
 	def _handlerError(self, func, path, excinfo):
 		os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
 		func(path)
@@ -100,22 +149,22 @@ class AutoConfig(object):
 
 	def _removeFileOrDir(self, path, log = True):
 		if os.path.exists(path):
+			if log:
+				self.log.info("remove '%s' ..." %path)
 			if os.path.isdir(path):
 				shutil.rmtree(path, False, self._handlerError)
 			else:
 				os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
 				os.remove(path)
-			if log:
-				self.log.info("remove '%s' ..." %path)
 
 	def _makeDir(self, path, delete = True, log = True):
 		try:
 			if delete:
 				self._removeFileOrDir(path, log)
 			if not os.path.exists(path):
-				os.makedirs(path)
 				if log:
 					self.log.info("mkdir '%s' ..." %path)
+				os.makedirs(path)
 		except Exception, e:
 			self.log.error(str(e))
 			return False
@@ -322,7 +371,7 @@ class AutoConfig(object):
 		parser.set('Region_%d' %0, 'Count', 1)
 		serverip = self.configParser.get('client', 'serverip')
 		if not serverip or serverip == "0":
-			serverip = self._getNetInterface()[0]
+			serverip = self.localIp
 		parser.set('Region_%d' %0, '%d_Title' %0, serverip)
 		parser.set('Region_%d' %0, '%d_Address' %0, serverip)
 		with file(path, 'w') as f:
@@ -391,13 +440,12 @@ class AutoConfig(object):
 		self.log.info("==> config client finished!")
 
 	def _parseGoddessConfig(self, path):
-		localIp = self._getNetInterface()[0]
 		parser = ConfigParser.ConfigParser()
 		parser.optionxform = str
 		parser.add_section('Version')
 		parser.set('Version', 'Version', 2)
 		parser.add_section('KG_Goddess')
-		parser.set('KG_Goddess', 'ListenIP', localIp)
+		parser.set('KG_Goddess', 'ListenIP', self.localIp)
 		parser.set('KG_Goddess', 'ListenPort', 5001)
 		parser.set('KG_Goddess', 'LoopSleepTime', 10)
 		parser.set('KG_Goddess', 'AutoDisconnectTime', 120000)
@@ -411,14 +459,13 @@ class AutoConfig(object):
 		parser.set('DatabaseServer', 'Password', self.configParser.get("server", "mysql_password"))
 		parser.set('DatabaseServer', 'EnableEncrypt', 0)
 		parser.add_section('RoleStatistic')
-		parser.set('RoleStatistic', 'ListenIP', localIp)
+		parser.set('RoleStatistic', 'ListenIP', self.localIp)
 		parser.set('RoleStatistic', 'ListenPort', 6001)
 		parser.set('RoleStatistic', 'SendRecvTimeout', 60000)
 		with file(path, 'w') as f:
    			parser.write(f)
 
    	def _parseBishopConfig(self, path):
-   		localIp = self._getNetInterface()[0]
    		parser = ConfigParser.ConfigParser()
 		parser.optionxform = str
 		parser.add_section('Version')
@@ -433,29 +480,29 @@ class AutoConfig(object):
 		parser.set('Paysys', 'LoopTime', 100)
 		parser.set('Paysys', 'PingTime', 10000)
 		parser.add_section('Goddess')
-		parser.set('Goddess', 'IPAddress', localIp)
-		parser.set('Goddess', 'LocalIPAddress', localIp)
+		parser.set('Goddess', 'IPAddress', self.localIp)
+		parser.set('Goddess', 'LocalIPAddress', self.localIp)
 		parser.set('Goddess', 'Port', 5001)
 		parser.set('Goddess', 'SendRecvTimeout', 60000)
 		parser.set('Goddess', 'ReconnectTime', 10000)
 		parser.set('Goddess', 'LoopTime', 100)
 		parser.set('Goddess', 'PingTime', 20000)
 		parser.add_section('Relay')
-		parser.set('Relay', 'LocalIPAddress', localIp)
+		parser.set('Relay', 'LocalIPAddress', self.localIp)
 		parser.set('Relay', 'OpenPort', 5632)
 		parser.set('Relay', 'SendRecvTimeout', 60000)
 		parser.set('Relay', 'LoopTime', 100)
 		parser.set('Relay', 'PingTime', 20000)
 		parser.set('Relay', 'AccountInRelayTimeout', 60000)
 		parser.add_section('GameServer')
-		parser.set('GameServer', 'LocalIPAddress', localIp)
+		parser.set('GameServer', 'LocalIPAddress', self.localIp)
 		parser.set('GameServer', 'OpenPort', 5633)
 		parser.set('GameServer', 'SendRecvTimeout', 180000)
 		parser.set('GameServer', 'AccountInManagerTimeout', 300000)
 		parser.set('GameServer', 'LoopTime', 100)
 		parser.set('GameServer', 'PingTime', 60000)
 		parser.add_section('Player')
-		parser.set('Player', 'LocalIPAddress', localIp)
+		parser.set('Player', 'LocalIPAddress', self.localIp)
 		parser.set('Player', 'OpenPort', 5622)
 		parser.set('Player', 'MaxPlayers', 16)
 		parser.set('Player', 'MaxPlayerInLoginSection', 10)
@@ -468,28 +515,27 @@ class AutoConfig(object):
    			parser.write(f)
 
    	def _parseRelayConfig(self, path):
-   		localIp = self._getNetInterface()[0]
    		parser = ConfigParser.ConfigParser()
 		parser.optionxform = str
 		parser.add_section('Gmc')
 		parser.set('Gmc', 'Address', self.configParser.get("server", "paysys_ip"))
-		parser.set('Gmc', 'LocalAddr', localIp)
+		parser.set('Gmc', 'LocalAddr', self.localIp)
 		parser.set('Gmc', 'Port', 9991)
 		parser.set('Gmc', 'Enable', 0)
 		parser.set('Gmc', 'EncryptionType', 0)
 		parser.set('Gmc', 'ReConnInterval', 20000)
 		parser.set('Gmc', 'PingInterval', 90000)		
 		parser.add_section('Bishop')
-		parser.set('Bishop', 'Address', localIp)
-		parser.set('Bishop', 'LocalAddr', localIp)
+		parser.set('Bishop', 'Address', self.localIp)
+		parser.set('Bishop', 'LocalAddr', self.localIp)
 		parser.set('Bishop', 'Port', 5632)
 		parser.set('Bishop', 'Enable', 1)
 		parser.set('Bishop', 'EncryptionType', 0)
 		parser.set('Bishop', 'ReConnInterval', 20000)
 		parser.set('Bishop', 'PingInterval', 90000)
 		parser.add_section('Goddess')
-		parser.set('Goddess', 'Address', localIp)
-		parser.set('Goddess', 'LocalAddr', localIp)
+		parser.set('Goddess', 'Address', self.localIp)
+		parser.set('Goddess', 'LocalAddr', self.localIp)
 		parser.set('Goddess', 'Port', 5001)
 		parser.set('Goddess', 'Enable', 1)
 		parser.set('Goddess', 'EncryptionType', 0)
@@ -502,7 +548,7 @@ class AutoConfig(object):
 		parser.set('Relay', 'backup', 0)
 		parser.add_section('Host')
 		parser.set('Host', 'bLogSocket', 1)
-		parser.set('Host', 'LocalAddr', localIp)
+		parser.set('Host', 'LocalAddr', self.localIp)
 		parser.set('Host', 'ListenPort', 5003)
 		parser.set('Host', 'SendRecvTimeout', 60000)
 		parser.set('Host', 'LoopTime', 50)
@@ -512,7 +558,7 @@ class AutoConfig(object):
 		parser.set('Host', 'FreeBuffer', 15)
 		parser.set('Host', 'BufferSize', 1048576)
 		parser.add_section('Chat')
-		parser.set('Chat', 'LocalAddr', localIp)
+		parser.set('Chat', 'LocalAddr', self.localIp)
 		parser.set('Chat', 'ListenPort', 5004)
 		parser.set('Chat', 'SendRecvTimeout', 60000)
 		parser.set('Chat', 'LoopTime', 50)
@@ -521,7 +567,7 @@ class AutoConfig(object):
 		parser.set('Chat', 'FreeBuffer', 15)
 		parser.set('Chat', 'BufferSize', 409600)
 		parser.add_section('Tong')
-		parser.set('Tong', 'LocalAddr', localIp)
+		parser.set('Tong', 'LocalAddr', self.localIp)
 		parser.set('Tong', 'ListenPort', 5005)
 		parser.set('Tong', 'SendRecvTimeout', 60000)
 		parser.set('Tong', 'LoopTime', 50)
@@ -592,7 +638,6 @@ class AutoConfig(object):
 		self.log.info("==> config %s finished!" %name)
 
 	def _parseGamesvr(self, path):
-		localIp = self._getNetInterface()[0]
 		parser = ConfigParser.ConfigParser()
 		parser.optionxform = str
 		parser.add_section('Server')
@@ -602,26 +647,26 @@ class AutoConfig(object):
 		parser.set('Server', 'IS_EXP_SVR', 0)
 		parser.set('Server', 'IS_INTERNAL_TEST_SVR', 1)
 		parser.add_section('Gateway')
-		parser.set('Gateway', 'Ip', localIp)
+		parser.set('Gateway', 'Ip', self.localIp)
 		parser.set('Gateway', 'Port', 5633)
 		parser.add_section('Database')
-		parser.set('Database', 'Ip', localIp)
+		parser.set('Database', 'Ip', self.localIp)
 		parser.set('Database', 'Port', 5001)
 		parser.add_section('Transfer')
-		parser.set('Transfer', 'Ip', localIp)
+		parser.set('Transfer', 'Ip', self.localIp)
 		parser.set('Transfer', 'Port', 5003)
 		parser.add_section('Chat')
-		parser.set('Chat', 'Ip', localIp)
+		parser.set('Chat', 'Ip', self.localIp)
 		parser.set('Chat', 'Port', 5004)
 		parser.add_section('Tong')
-		parser.set('Tong', 'Ip', localIp)
+		parser.set('Tong', 'Ip', self.localIp)
 		parser.set('Tong', 'Port', 5005)
 		parser.add_section('GameServer')
 		parser.set('GameServer', 'Port', 6667)
 		parser.set('GameServer', 'GM', 1)
 		parser.add_section('Net')
-		parser.set('Net', 'LocalIP', localIp)
-		parser.set('Net', 'ExternalIP', localIp)
+		parser.set('Net', 'LocalIP', self.localIp)
+		parser.set('Net', 'ExternalIP', self.localIp)
 		parser.add_section('Overload')
 		parser.set('Overload', 'MaxPlayer', 2000)
 		parser.set('Overload', 'Precision', 50)
@@ -716,11 +761,10 @@ class AutoConfig(object):
 		username = self.configParser.get("server", "ps_manage_user")
 		password = self.configParser.get("server", "ps_manage_passwd")
 		self.log.info("==> register local machine to paysys(%s:%s/%s)" %(ora_ip, ora_port, ora_server_name))
-		interface = self._getNetInterface()
 		self.log.info("register name: %s" %name)
 		self.log.info("register passwd: %s" %passwd)
-		self.log.info("machine IP: %s" %interface[0])
-		self.log.info("machine MAC: %s" %interface[1])
+		self.log.info("machine IP: %s" %self.localIp)
+		self.log.info("machine MAC: %s" %self.localMac)
 		os.environ["ORACLE_HOME"] = os.path.abspath(".")
 		try:
 			connection = cx_Oracle.Connection(username, password, ora_dsn)
@@ -738,7 +782,7 @@ class AutoConfig(object):
 				md5pd = md5.hexdigest().upper()
 				sql = """insert into config_gateway(GATEWAY_ID, GATEWAY_NAME, ZONE_ID, PASSWORD, IP, MAC, STATE, RELAY_IP, DESCRIPTION)
 					values(%d, '%s', 1, '%s', '%s', '%s', 0, '%s', 'insert by AutoConfig')"""
-				cursor.execute(sql %(int(format[0]) + 1, name, md5pd, interface[0], interface[1], interface[0]))
+				cursor.execute(sql %(int(format[0]) + 1, name, md5pd, self.localIp, self.localMac, self.localIp))
 			else:
 				cursor.close()
 				connection.close()
@@ -829,12 +873,17 @@ def main():
 	if opts.p:
 		config.packLibrary(RC_COMMON_PACK)
 	if opts.c:
+		config.checkIpCorrectness()
 		config.configClient()
 	if opts.s:
+		config.checkIpCorrectness()
+		config.checkMacCorrectness()
 		config.configServer()
 	if opts.r:
 		reg_name = raw_input("please input register name:")
 		reg_passwd = raw_input("please input register passwd:")
+		config.checkIpCorrectness()
+		config.checkMacCorrectness()
 		config.registerPaysys(reg_name, reg_passwd)
 	if opts.m:
 		config.configMysql()
