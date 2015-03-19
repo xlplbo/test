@@ -15,11 +15,12 @@ import logging
 import shutil
 import stat
 import chardet
-import socket
 import MySQLdb
 import cx_Oracle
-import uuid
-import time
+import random
+import string
+import netifaces
+import hashlib
 
 RC_LOG_FILE = "autoconfig.log"
 RC_CONFIG_FILE = "config.ini"
@@ -36,13 +37,13 @@ RC_RELAY_LIST = ('engine.dll', 'kg_angel.dll', 'libmysql.dll', 'logdatabase.dll'
 	'so2relay.exe', 'verify_up2date.exe')
 RC_GAMESVR_LIST = ('engine.dll', 'heaven.dll', 'libmysql.dll', 'logdatabase.dll', 'lualibdll.dll', 'rainbow.dll',
 	'so2gamesvr.exe', 'verify_up2date.exe')
+RC_MAX_SIZE = 8192 #MB
 
 class AutoConfig(object):
 	"""docstring for AutoConfig"""
 	def __init__(self, config, log):
 		super(AutoConfig, self).__init__()
-		self.progress = 0
-		self.paysys_regname = time.strftime('CP%Y%m%d%H%M%S',time.localtime(time.time()))
+		self.paysys_regname = ''.join(random.sample(string.ascii_letters, 8))
 		self.paysys_regpasswd = "a"
 		self.config = config
 		self.configParser = ConfigParser.ConfigParser()
@@ -64,25 +65,17 @@ class AutoConfig(object):
 	def _isLinux(self):
 		return sys.platform.startswith('linux')
 
-	def _getLocalIp(self):
-		if self._isWondows():
-			return socket.gethostbyname(socket.gethostname())
-		if self._isLinux():
-			import fcntl
-			import struct
-			s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-			for x in ['eth0', 'wlan0', 'lo']:
-				try:
-					localip = socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, struct.pack('256s', x[:15]))[20:24])
-					self.log.info("assign requested address %s --> %s" %(x, localip))
-					return localip
-				except Exception, e:
-					self.log.error("%s --> %s" %(str(e), x))
-
-	def _getLocalMac(self):
-		node = uuid.getnode()
-		mac = uuid.UUID(int = node).hex[-12:].upper()
-		return "%s-%s-%s-%s-%s-%s" %(mac[:2], mac[2:4], mac[4:6], mac[6:8], mac[8:10], mac[10:12])
+	def _getNetInterface(self):
+		for dev in netifaces.interfaces():
+			infos = netifaces.ifaddresses(dev)
+			if len(infos) < 2:
+				continue
+			ip = infos[netifaces.AF_INET][0]['addr']
+			mac = infos[netifaces.AF_LINK][0]['addr']
+			if len(ip) > 0 and ip != "127.0.0.1" and len(mac) > 0:
+				return (ip, mac.upper().replace(":", "-"))
+		self.log.error("can not get net interfaces information, abort")
+		exit()
 
 	def _getFileCoding(self, filename):
 		charset = None
@@ -100,32 +93,29 @@ class AutoConfig(object):
 			else:
 				title = "please input again(y/N):"
 
-	def _showProgress(self, step):
-		self.progress += 1
-		if step > 0:
-			index = self.progress // step
-			if index <= 10 and index * step == self.progress:
-				self.log.info("progress %d%%" %(index*10))
-
 	def _handlerError(self, func, path, excinfo):
 		os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
 		func(path)
 		self.log.info("Exception handling: %s %s" %(getattr(func, '__name__'), path))
 
-	def _removeFileOrDir(self, path):
+	def _removeFileOrDir(self, path, log = True):
 		if os.path.exists(path):
 			if os.path.isdir(path):
 				shutil.rmtree(path, False, self._handlerError)
 			else:
 				os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
 				os.remove(path)
-			self.log.info("remove '%s' ..." %path)
+			if log:
+				self.log.info("remove '%s' ..." %path)
 
-	def _makeDir(self, path):
+	def _makeDir(self, path, delete = True, log = True):
 		try:
-			self._removeFileOrDir(path)
-			os.makedirs(path)
-			self.log.info("mkdir '%s' ..." %path)
+			if delete:
+				self._removeFileOrDir(path, log)
+			if not os.path.exists(path):
+				os.makedirs(path)
+				if log:
+					self.log.info("mkdir '%s' ..." %path)
 		except Exception, e:
 			self.log.error(str(e))
 			return False
@@ -144,32 +134,25 @@ class AutoConfig(object):
 			return True
 		return False
 
-	def _getProgramsAndLibrary(self, path, filedict):
-		if os.path.exists(path) and not os.path.isdir(path) and self._isProgramsAndLibrary(path):
-			filedict[os.path.split(path)[1]] = path
-			return 
-		for x in os.listdir(path):
-			childdir = os.path.join(path, x)
-			if os.path.isdir(childdir):
-				self._getProgramsAndLibrary(childdir, filedict)
-			else:
-				if self._isProgramsAndLibrary(x):
-					filedict[x] = childdir
-		return
+	def _getProgramsAndLibrary(self, path):
+		filedict = {}
+		for root, dirs, files in os.walk(path):
+			for tup in [(f, os.path.join(root, f)) for f in files if self._isProgramsAndLibrary(f)]:
+				filedict[tup[0]] = tup[1]
+		return filedict
 
 	def packLibrary(self, name):
 		self.log.info("================================================")
 		self.log.info("prepare to packaged programs and librarys!")
 		self.log.warn("please compile your project at first, and then run packaged program!")
-		for v in os.listdir("."):
-			if os.path.isfile(v) and v == name and \
-			self._checkYesOrNO("check file '%s' is exist! do you update this file?(y/N):" %name):
-				self._removeFileOrDir(name)
-				break
-			else:
-				self.log.info("packaged finish! thanks all")
-				return True
-		filedict = {}
+		currPath = os.path.abspath(".")
+		for v in os.listdir(currPath):
+			if os.path.isfile(v) and v == name:
+				if self._checkYesOrNO("check file '%s' is exist! do you update this file?(y/N):" %name):
+					self._removeFileOrDir(name)
+				else:
+					self.log.info("packaged finish! thanks all")
+					return True
 		path = self.configParser.get("packlibrary", "path")
 		pathlist = path.split(',')
 		for pathlv in pathlist:
@@ -180,57 +163,92 @@ class AutoConfig(object):
 				self.log.error("path '%s' is wrong, please check '%s'" %(pathlv, self.config))
 				continue
 			self.log.info("traverse '%s' directory ..." %pathlv)
-			self._getProgramsAndLibrary(pathlv, filedict)
-		if len(filedict) <= 0:
-			self.log.error("can not find any program or library, please build project and run again")
-			return False
-		zipFile = zipfile.ZipFile(name, 'a', zipfile.ZIP_DEFLATED)
-		for k, v in filedict.iteritems():
-			self.log.info("file '%s' packaged" %k)
-			zipFile.write(v, k)
-		zipFile.close()
+			filedict = self._getProgramsAndLibrary(pathlv)
+			if len(filedict) <= 0:
+				continue
+			zipFile = zipfile.ZipFile(name, 'a', zipfile.ZIP_DEFLATED)
+			for k, v in filedict.iteritems():
+				self.log.info("file '%s' packaged" %k)
+				zipFile.write(v, k)
+			zipFile.close()
 		self.log.info("==> generate '%s' success! " %name)
 		self.log.info("==> packaged programs and librarys finished!")
 
-	def _getTreeDict(self, path, filedict):
-		if not os.path.isdir(path):
-			return
-		for name in os.listdir(path):
-			if '.svn' in name:
+	def _getFileCount(self, path, blacklist):
+		count = 0L
+		for root, dirs, files in os.walk(path):
+			if len([x for x in blacklist if x in root]) > 0:
 				continue
-			childdir = os.path.join(path, name)
-			if not os.path.isdir(childdir):
-				filedict[childdir] = name
-			else:
-				self._getTreeDict(childdir, filedict) 
+			count += files.__len__() - len([x for x in files for y in blacklist if y in x])
+		return count
 
-	def _copyFile(self, srcname, dstname, step = 0):
+	def _getDirSize(self, dir):
+		size = 0L
+		for root, dirs, files in os.walk(dir):
+			size += sum([os.path.getsize(os.path.join(root, name)) for name in files])
+		return size/1024/1024
+
+	def _createShortcut(self, src, dst):
+		import pythoncom
+		from win32com.shell import shell
+		shortcut = pythoncom.CoCreateInstance(
+		shell.CLSID_ShellLink, None,
+		pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink)
+		shortcut.SetPath(src)
+		if os.path.splitext(dst)[-1] != '.lnk':  
+			dst += ".lnk" 
+		shortcut.QueryInterface(pythoncom.IID_IPersistFile).Save(dst,0)
+		self.log.info("create shortcut '%s' ..." %dst)
+
+	def _copyFile(self, srcname, dstname):
 		try:
 			self._removeFileOrDir(dstname)
-			if os.path.islink(srcname):
-				linkto = os.readlink(srcname)
-				os.symlink(linkto, dstname)
-			elif os.path.isfile(srcname):
+			if os.path.isfile(srcname):
 				shutil.copy2(srcname, dstname)
+				shutil.copystat(srcname, dstname)
 		except Exception, e:
 			self.log.error(str(e))
-		shutil.copystat(srcname, dstname)
-		self._showProgress(step)
 
-	def _copyFolder(self, src, dst, blacklist, step = 0):
-		if not os.path.isdir(src):
-			return
-		if not os.path.exists(dst):
-			os.mkdir(dst)
-		for name in os.listdir(src):
-			if name.strip() in blacklist:
+	def _copyFolder(self, src, dst, blacklist):
+		filecount = 0L
+		lnkfilecount = 0L
+		filetotal = self._getFileCount(src, blacklist)
+		step = max((filetotal - filetotal%10) / 10, 1)
+		lnklist = []
+		for root, dirs, files in os.walk(src):
+			if len([x for x in blacklist if x in root]) > 0:
 				continue
-			srcname = os.path.join(src, name)
-			dstname = os.path.join(dst, name)
-			if not os.path.isdir(srcname):
-				self._copyFile(srcname, dstname, step)
-			else:
-				self._copyFolder(srcname, dstname, blacklist, step)
+			if len([x for x in lnklist if x in root]) > 0:
+				continue
+			dstroot = root.replace(src, dst)
+			self._makeDir(dstroot, False, False)
+			for dir in [x for x in dirs if x not in blacklist]:
+				srcPath = os.path.join(root, dir)
+				dstpath = os.path.join(dstroot, dir)
+				if self._isWondows():
+					if self._getDirSize(srcPath) < RC_MAX_SIZE:				
+						self._makeDir(dstpath, False, False)
+					else:
+						lnklist.append(srcPath)
+						print srcPath, dstpath, lnklist
+						self._createShortcut(srcPath, dstpath)
+						count = self._getFileCount(srcPath, blacklist)
+						lnkfilecount = count
+						filecount += count
+						index = filecount // step
+						if index <= 10 and index * step == filecount:
+							self.log.info("progress %d%%" %(index*10))
+				else:
+					self._makeDir(dstpath, False, False)
+			for file in [x for x in files if x not in blacklist]:
+				srcfile = os.path.join(root, file)
+				dstfile = os.path.join(dstroot, file)
+				self._copyFile(srcfile, dstfile)
+				filecount += 1
+				index = filecount // step
+				if index <= 10 and index * step == filecount:
+					self.log.info("progress %d%%" %(index*10))
+		self.log.info("actually %d file(s) have been copied" %(filecount-lnkfilecount))
 
 	def copyFolder(self, src, dst, blacklist = []):
 		if not os.path.exists(src):
@@ -238,13 +256,8 @@ class AutoConfig(object):
 		if not os.path.exists(dst):
 			self.log.error("can not find '%s', please check '%s' file" %(dst, self.config))
 		self.log.info("copy floders '%s' to '%s' ..." %(src, dst))
-		filedict = {}
-		self._getTreeDict(src, filedict)
-		step = (len(filedict) - (len(filedict) % 10)) // 10
-		self.progress = 0
 		blacklist.append(".svn")
-		self._copyFolder(src, dst, map(lambda s: s.lower(), blacklist), step)
-		self.log.info("actually %d file(s) have been copied" %self.progress)
+		self._copyFolder(src, dst, map(lambda s: s.lower(), blacklist))
 
 	def _extractLibrary(self, path):
 		self.log.info("copy windows librarys to '%s'" %path)
@@ -254,8 +267,7 @@ class AutoConfig(object):
 				zipFile.extract(v, path)
 				self.log.info("extract '%s' ..." %v)
 			except Exception, e:
-				self.log.error(str(e))
-			
+				self.log.error(str(e))			
 
 	def _extractFiles(self, path, list):
 		self.log.info("copy programs and librarys to '%s'" %path)
@@ -310,7 +322,7 @@ class AutoConfig(object):
 		parser.set('Region_%d' %0, 'Count', 1)
 		serverip = self.configParser.get('client', 'serverip')
 		if not serverip or serverip == "0":
-			serverip = self._getLocalIp()
+			serverip = self._getNetInterface()[0]
 		parser.set('Region_%d' %0, '%d_Title' %0, serverip)
 		parser.set('Region_%d' %0, '%d_Address' %0, serverip)
 		with file(path, 'w') as f:
@@ -350,8 +362,12 @@ class AutoConfig(object):
 	def configClient(self):
 		self.log.info("================================================")
 		self.log.info("Prepare to config client!")
-		if self._isLinux() and not self._checkYesOrNO("do you config client on linux OS?(y/N):"):
-			self.log.info("config client on linux OS cancel by user!")
+		if not os.path.exists(RC_COMMON_PACK):
+			self.log.error("can not find '%s', abort!!!" %RC_COMMON_PACK)
+			self.log.info("please run program with 'prog -p', packaged programs and librarys!")
+			return False
+		if self._isLinux():
+			self.log.info("config client on linux OS, abort!!!")
 			return False
 		root = self.configParser.get("client", "home").strip()
 		if not self._makeDir(root):
@@ -375,7 +391,7 @@ class AutoConfig(object):
 		self.log.info("==> config client finished!")
 
 	def _parseGoddessConfig(self, path):
-		localIp = self._getLocalIp()
+		localIp = self._getNetInterface()[0]
 		parser = ConfigParser.ConfigParser()
 		parser.optionxform = str
 		parser.add_section('Version')
@@ -402,7 +418,7 @@ class AutoConfig(object):
    			parser.write(f)
 
    	def _parseBishopConfig(self, path):
-   		localIp = self._getLocalIp()
+   		localIp = self._getNetInterface()[0]
    		parser = ConfigParser.ConfigParser()
 		parser.optionxform = str
 		parser.add_section('Version')
@@ -452,7 +468,7 @@ class AutoConfig(object):
    			parser.write(f)
 
    	def _parseRelayConfig(self, path):
-   		localIp = self._getLocalIp()
+   		localIp = self._getNetInterface()[0]
    		parser = ConfigParser.ConfigParser()
 		parser.optionxform = str
 		parser.add_section('Gmc')
@@ -576,7 +592,7 @@ class AutoConfig(object):
 		self.log.info("==> config %s finished!" %name)
 
 	def _parseGamesvr(self, path):
-		localIp = self._getLocalIp()
+		localIp = self._getNetInterface()[0]
 		parser = ConfigParser.ConfigParser()
 		parser.optionxform = str
 		parser.add_section('Server')
@@ -700,25 +716,34 @@ class AutoConfig(object):
 		username = self.configParser.get("server", "ps_manage_user")
 		password = self.configParser.get("server", "ps_manage_passwd")
 		self.log.info("==> register local machine to paysys(%s:%s/%s)" %(ora_ip, ora_port, ora_server_name))
-		localIp = self._getLocalIp()		
-		localMac = self._getLocalMac()
+		interface = self._getNetInterface()
 		self.log.info("register name: %s" %name)
 		self.log.info("register passwd: %s" %passwd)
-		self.log.info("machine IP: %s" %localIp)
-		self.log.info("machine MAC: %s" %localMac)
-		if not self._checkYesOrNO("please use caution! are you sure?(y/N):"):
-			self.log.info("user cancelled!!!")
-			return True
+		self.log.info("machine IP: %s" %interface[0])
+		self.log.info("machine MAC: %s" %interface[1])
+		os.environ["ORACLE_HOME"] = os.path.abspath(".")
 		try:
 			connection = cx_Oracle.Connection(username, password, ora_dsn)
 			cursor = connection.cursor()
 			cursor.execute("select max(GATEWAY_ID) from config_gateway")
 			format = map(lambda x: int(x[0]), cursor.fetchall())
+			if not self._checkYesOrNO("please use caution! are you sure?(y/N):"):
+				cursor.close()
+				connection.close()
+				self.log.info("user cancelled!!!")
+				return False
 			if len(format) > 0:
-				key = int(format[0]) + 1
+				md5 = hashlib.md5()
+				md5.update(passwd.encode('utf-8'))
+				md5pd = md5.hexdigest().upper()
 				sql = """insert into config_gateway(GATEWAY_ID, GATEWAY_NAME, ZONE_ID, PASSWORD, IP, MAC, STATE, RELAY_IP, DESCRIPTION)
 					values(%d, '%s', 1, '%s', '%s', '%s', 0, '%s', 'insert by AutoConfig')"""
-				cursor.execute(sql %(key, name, passwd, localIp, localMac, localIp))
+				cursor.execute(sql %(int(format[0]) + 1, name, md5pd, interface[0], interface[1], interface[0]))
+			else:
+				cursor.close()
+				connection.close()
+				self.log.error("can not get max(gateway_id) value")
+				return False
 			connection.commit()
 			cursor.close()
 			connection.close()
@@ -732,6 +757,10 @@ class AutoConfig(object):
 	def configServer(self):
 		self.log.info("================================================")
 		self.log.info("Prepare to config server!")
+		if not os.path.exists(RC_COMMON_PACK):
+			self.log.error("can not find '%s', abort!!!" %RC_COMMON_PACK)
+			self.log.info("please run program with 'prog -p', packaged programs and librarys!")
+			return False
 		if not self.configMysql() and not self._checkYesOrNO("mysql operation failed, continue?(y/N):"):
 			self.log.info("user cancelled!!!")
 			return True
@@ -762,7 +791,7 @@ def main():
 		return False
 
 	#check parameters type
-	parser = OptionParser(usage="\n  %%prog <Options> [config] [log]\n  notice: please configurate [%s] at first\n  e.g %%prog -c -s" %RC_CONFIG_FILE)
+	parser = OptionParser(usage="\n  %%prog <Options> [config] [log]\n  notice: please configurate [%s] at first\n  e.g: %%prog -c -s" %RC_CONFIG_FILE)
 	parser.add_option(
 		"-p", "--packlibrary", action="store_true", dest="p", help="jv2 program and runtime librarys packaged")
 	parser.add_option(
