@@ -43,6 +43,7 @@ class AutoConfig(object):
 		super(AutoConfig, self).__init__()
 		self.progress = 0
 		self.paysys_regname = time.strftime('CP%Y%m%d%H%M%S',time.localtime(time.time()))
+		self.paysys_regpasswd = "a"
 		self.config = config
 		self.configParser = ConfigParser.ConfigParser()
 		self.configParser.readfp(codecs.open(config, "r", self._getFileCoding(config)))  
@@ -80,8 +81,8 @@ class AutoConfig(object):
 
 	def _getLocalMac(self):
 		node = uuid.getnode()
-		mac = uuid.UUID(int = node).hex[-12:]
-		return mac
+		mac = uuid.UUID(int = node).hex[-12:].upper()
+		return "%s-%s-%s-%s-%s-%s" %(mac[:2], mac[2:4], mac[4:6], mac[6:8], mac[8:10], mac[10:12])
 
 	def _getFileCoding(self, filename):
 		charset = None
@@ -409,8 +410,8 @@ class AutoConfig(object):
 		parser.add_section('Paysys')
 		parser.set('Paysys', 'IPAddress', self.configParser.get("server", "paysys_ip"))
 		parser.set('Paysys', 'Port', self.configParser.get("server", "paysys_port"))
-		parser.set('Paysys', 'UserName', self.configParser.get("server", "paysys_username"))
-		parser.set('Paysys', 'Password', self.configParser.get("server", "paysys_password"))
+		parser.set('Paysys', 'UserName', self.paysys_regname)
+		parser.set('Paysys', 'Password', self.paysys_regpasswd)
 		parser.set('Paysys', 'SendRecvTimeout', 60000)
 		parser.set('Paysys', 'ReconnectTime', 10000)
 		parser.set('Paysys', 'LoopTime', 100)
@@ -554,6 +555,7 @@ class AutoConfig(object):
 		self._parseIniFile(dstPath, "relay.ini", self._parseRelayConfig)
 
 	def _configGateway(self, name, root, resource, catalog, func):
+		self.log.info("================================================")
 		self.log.info("==> begin to config %s ..." %name)
 		dstPath = os.path.join(root, name)
 		if not self._makeDir(dstPath):
@@ -611,6 +613,7 @@ class AutoConfig(object):
    			parser.write(f)
 
 	def _configGameSvr(self, root, resource, catalog):
+		self.log.info("================================================")
 		name = "GameSvr"
 		self.log.info("==> begin to config %s ..." %name)
 		dstPath = os.path.join(root, name)
@@ -647,7 +650,7 @@ class AutoConfig(object):
 		self._removeFileOrDir(os.path.join(dstPath, "dynamic_pwd.ini"))
 		self.log.info("==> config %s finished!" %name)
 
-	def _configMysql(self):
+	def configMysql(self):
 		self.log.info("==> connect and operate mysql ...")
 		host = self.configParser.get("server", "mysql_ip")
 		user = self.configParser.get("server", "mysql_username")
@@ -688,60 +691,66 @@ class AutoConfig(object):
 		self.log.info("==> connect and operate mysql finished!")
 		return True
 
-	def _configPaysys(self):
+	def registerPaysys(self, name, passwd):
+		self.log.info("================================================")
 		ora_ip = self.configParser.get("server", "paysys_ip")
 		ora_port = self.configParser.get("server", "ps_listen_port")
 		ora_server_name = self.configParser.get("server", "ps_server_name")
 		ora_dsn = cx_Oracle.makedsn(ora_ip, ora_port, ora_server_name)
 		username = self.configParser.get("server", "ps_manage_user")
 		password = self.configParser.get("server", "ps_manage_passwd")
-		localIp = self._getLocalIp()
+		self.log.info("==> register local machine to paysys(%s:%s/%s)" %(ora_ip, ora_port, ora_server_name))
+		localIp = self._getLocalIp()		
 		localMac = self._getLocalMac()
+		self.log.info("register name: %s" %name)
+		self.log.info("register passwd: %s" %passwd)
+		self.log.info("machine IP: %s" %localIp)
+		self.log.info("machine MAC: %s" %localMac)
+		if not self._checkYesOrNO("please use caution! are you sure?(y/N):"):
+			self.log.info("user cancelled!!!")
+			return True
 		try:
 			connection = cx_Oracle.Connection(username, password, ora_dsn)
 			cursor = connection.cursor()
-			cursor.execute("create sequence %s" %self.paysys_regname)
-			# cursor.execute('select %s.nextval from config_gateway' %self.paysys_regname)
-			# format = map(lambda x: int(x[0]), cursor.fetchall())
-			# print max(format)
-			sql = """insert into config_gateway(GATEWAY_ID, GATEWAY_NAME, ZONE_ID, PASSWORD, IP, MAC, STATE, RELAY_IP, DESCRIPTION) \
-				values(%s, '%s', 1, '%s', '%s', '%s', 0, '%s', 'insert by AutoConfig')"""
-			print(sql %('%s.nextval' %self.paysys_regname, self.paysys_regname, 'a', localIp, localMac, localIp))	
-			cursor.execute(sql %('%s.nextval' %self.paysys_regname, self.paysys_regname, 'a', localIp, "00-21-9B-3A-62-A1", localIp))
-			print cursor.fetchall()
-			# for x in cursor.fetchall():
-			#  	self.log.info(str(x)) 
-			# format = map(lambda x: x[0], cursor.fetchall())
-			# for x in format:
-			# 	cursor.execute("select * from %s" %x)
-			# 	print map(lambda x: x[0], cursor.fetchall())
-			cursor.execute("drop sequence %s" %self.paysys_regname)
+			cursor.execute("select max(GATEWAY_ID) from config_gateway")
+			format = map(lambda x: int(x[0]), cursor.fetchall())
+			if len(format) > 0:
+				key = int(format[0]) + 1
+				sql = """insert into config_gateway(GATEWAY_ID, GATEWAY_NAME, ZONE_ID, PASSWORD, IP, MAC, STATE, RELAY_IP, DESCRIPTION)
+					values(%d, '%s', 1, '%s', '%s', '%s', 0, '%s', 'insert by AutoConfig')"""
+				cursor.execute(sql %(key, name, passwd, localIp, localMac, localIp))
 			connection.commit()
 			cursor.close()
 			connection.close()
 		except Exception, e:
-			self.log.error(str(e))		
+			self.log.error(str(e))
+			return False
+		self.log.info("add one record to paysys ...")
+		self.log.info("==> register paysys gateway success !!!")
+		return True
 
 	def configServer(self):
 		self.log.info("================================================")
 		self.log.info("Prepare to config server!")
-		# if not self._configMysql() and not self._checkYesOrNO("mysql operation failed, continue?(y/N):"):
-		# 	self.log.info("user cancelled!!!")
-		# 	return True
-		# return
-		# root = self.configParser.get("server", "home").strip()
-		# if not self._makeDir(root):
-		# 	return False
-		# resource = self.configParser.get("server", "resource").strip()
-		# if not os.path.isdir(resource):
-		# 	self.log.error("can not find '%s', please check '%s' file" %(resource, self.config))
-		# 	return False
-		# catalog = self.configParser.get("server", "catalog").split(',')
-		# self._configGateway("Goddess", root, resource, catalog, self._configGoddess)
-		# self._configGateway("Bishop", root, resource, catalog, self._configBishop)
-		# self._configGateway("Relay", root, resource, catalog, self._configRelay)
-		# self._configGameSvr(root, resource, catalog)
-		self._configPaysys()
+		if not self.configMysql() and not self._checkYesOrNO("mysql operation failed, continue?(y/N):"):
+			self.log.info("user cancelled!!!")
+			return True
+		if not self.registerPaysys(self.paysys_regname, self.paysys_regpasswd) and \
+			not self._checkYesOrNO("register paysys operation failed, continue?(y/N):"):
+			self.log.info("user cancelled!!!")
+			return True
+		root = self.configParser.get("server", "home").strip()
+		if not self._makeDir(root):
+			return False
+		resource = self.configParser.get("server", "resource").strip()
+		if not os.path.isdir(resource):
+			self.log.error("can not find '%s', please check '%s' file" %(resource, self.config))
+			return False
+		catalog = self.configParser.get("server", "catalog").split(',')
+		self._configGateway("Goddess", root, resource, catalog, self._configGoddess)
+		self._configGateway("Bishop", root, resource, catalog, self._configBishop)
+		self._configGateway("Relay", root, resource, catalog, self._configRelay)
+		self._configGameSvr(root, resource, catalog)
 		self.log.info("==> config server finished!")
 
 def main():
@@ -753,16 +762,28 @@ def main():
 		return False
 
 	#check parameters type
-	parser = OptionParser(usage="\n  %%prog <Options> [config] [log]\n  notice: please configurate [%s] at first" %RC_CONFIG_FILE)
+	parser = OptionParser(usage="\n  %%prog <Options> [config] [log]\n  notice: please configurate [%s] at first\n  e.g %%prog -c -s" %RC_CONFIG_FILE)
 	parser.add_option(
 		"-p", "--packlibrary", action="store_true", dest="p", help="jv2 program and runtime librarys packaged")
 	parser.add_option(
 		"-c", "--client", action="store_true", dest="c", help="jv2 client automatic configuration")
 	parser.add_option(
 		"-s", "--server", action="store_true", dest="s", help="jv2 server automatic configuration")
+	parser.add_option(
+		"-r", "--registerpaysys", action="store_true", dest="r", help="automatic register machine to paysys")
+	parser.add_option(
+		"-m", "--operatemysql", action="store_true", dest="m", help="connect mysql and check version, create user table")
 	opts, args = parser.parse_args()
-	if opts.p != True and opts.c != True and opts.s != True:
+	if opts.p != True and opts.c != True and opts.s != True and opts.r != True and opts.m != True:
 		parser.print_help()
+		return False
+
+	if opts.s and opts.r:
+		parser.error("options -s and -r are mutually exclusive") 
+		return False
+
+	if opts.s and opts.m:
+		parser.error("options -s and -r are mutually exclusive") 
 		return False
 
 	config = None
@@ -782,6 +803,12 @@ def main():
 		config.configClient()
 	if opts.s:
 		config.configServer()
+	if opts.r:
+		reg_name = raw_input("please input register name:")
+		reg_passwd = raw_input("please input register passwd:")
+		config.registerPaysys(reg_name, reg_passwd)
+	if opts.m:
+		config.configMysql()
 
 	raw_input("\nplease input any key exit...")
 
