@@ -42,7 +42,7 @@ import os
 def getdirsize(dir):
     size = 0L
     for root, dirs, files in os.walk(dir):
-        print root, dirs, files, files.__len__()
+        #print root, dirs, files, files.__len__()
         size += sum([os.path.getsize(os.path.join(root, name)) for name in files])
     return size/1024/1024
 
@@ -78,3 +78,29 @@ from win32com.shell import shell
 
 s = "er"
 print s, len(s)
+
+#函数关键字参数（可选参数）
+def person( name, age, **kw ):
+    print 'name:', name, 'age:', age, 'other:', kw
+    return
+    
+person("Micheal", 30)
+person("Micheal", 30, city='beijing')
+person("Micheal", 30, genger='M', city='beijing')
+
+def f(x, a, *b, **kw):
+    if len(b) == 0:
+        x(a)
+    else:
+        x(a, *b)
+
+def g(a):
+    print a
+
+def d(a, b, c):
+    print a, b, c
+def e(a, b, c, d):
+    print a, b, c, d
+
+f(d, 4, 5, 6)
+f(e, 8, 7, 6, 5)

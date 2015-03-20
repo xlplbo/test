@@ -38,6 +38,7 @@ RC_RELAY_LIST = ('engine.dll', 'kg_angel.dll', 'libmysql.dll', 'logdatabase.dll'
 	'so2relay.exe', 'verify_up2date.exe')
 RC_GAMESVR_LIST = ('engine.dll', 'heaven.dll', 'libmysql.dll', 'logdatabase.dll', 'lualibdll.dll', 'rainbow.dll',
 	'so2gamesvr.exe', 'verify_up2date.exe')
+RC_ROUTER_LIST = ('engine.dll', 'lualibdll.dll', 'router.exe', 'verify_up2date.exe')
 RC_MAX_SIZE = 8192 #MB
 
 class AutoConfig(object):
@@ -262,7 +263,7 @@ class AutoConfig(object):
 		filecount = 0L
 		lnkfilecount = 0L
 		filetotal = self._getFileCount(src, blacklist)
-		step = max((filetotal - filetotal%10) / 10, 1)
+		step = (filetotal - filetotal%10) / 10
 		lnklist = []
 		for root, dirs, files in os.walk(src):
 			if len([x for x in blacklist if x in root]) > 0:
@@ -279,14 +280,16 @@ class AutoConfig(object):
 						self._makeDir(dstpath, False, False)
 					else:
 						lnklist.append(srcPath)
-						print srcPath, dstpath, lnklist
 						self._createShortcut(srcPath, dstpath)
 						count = self._getFileCount(srcPath, blacklist)
 						lnkfilecount = count
 						filecount += count
-						index = filecount // step
-						if index <= 10 and index * step == filecount:
-							self.log.info("progress %d%%" %(index*10))
+						if step > 0:
+							index = filecount // step
+							if index <= 10 and index * step == filecount:
+								self.log.info("progress %d%%" %(index*10))
+						elif filecount == filetotal:
+							self.log.info("progress %d%%" %100)
 				else:
 					self._makeDir(dstpath, False, False)
 			for file in [x for x in files if x not in blacklist]:
@@ -294,9 +297,12 @@ class AutoConfig(object):
 				dstfile = os.path.join(dstroot, file)
 				self._copyFile(srcfile, dstfile)
 				filecount += 1
-				index = filecount // step
-				if index <= 10 and index * step == filecount:
-					self.log.info("progress %d%%" %(index*10))
+				if step > 0:
+					index = filecount // step
+					if index <= 10 and index * step == filecount:
+						self.log.info("progress %d%%" %(index*10))
+				elif filecount == filetotal:
+					self.log.info("progress %d%%" %100)
 		self.log.info("actually %d file(s) have been copied" %(filecount-lnkfilecount))
 
 	def copyFolder(self, src, dst, blacklist = []):
@@ -340,7 +346,7 @@ class AutoConfig(object):
 			if v not in extFile:
 				self.log.error("can not find '%s', please check '%s' file" %(v, RC_COMMON_PACK))
 
-	def _parseIniFile(self, root, filename, func):
+	def _parseIniFile(self, root, filename, func, *param, **kw):
 		if self._isWondows():
 			root = root.replace("/", "\\")
 			filename = filename.replace("/", "\\")
@@ -351,7 +357,10 @@ class AutoConfig(object):
 		if not os.path.isfile(filepath):
 			self.log.error("can not find '%s'" %filepath)
 		self.log.info("parser INI file '%s'" %filepath)
-		func(filepath)
+		if len(param) == 0:
+			func(filepath)
+		else:
+			func(filepath, *param, **kw)
 		lines = []
 		with file(filepath, "r") as f:
 			for v in f.readlines():
@@ -413,7 +422,7 @@ class AutoConfig(object):
 		self.log.info("Prepare to config client!")
 		if not os.path.exists(RC_COMMON_PACK):
 			self.log.error("can not find '%s', abort!!!" %RC_COMMON_PACK)
-			self.log.info("please run program with 'prog -p', packaged programs and librarys!")
+			self.log.info("please run program with '-p', packaged programs and librarys!")
 			return False
 		if self._isLinux():
 			self.log.info("config client on linux OS, abort!!!")
@@ -453,10 +462,10 @@ class AutoConfig(object):
 		parser.set('KG_Goddess', 'Group', 1)
 		parser.set('KG_Goddess', 'MaxRoleCountInAccount', 9)
 		parser.add_section('DatabaseServer')
-		parser.set('DatabaseServer', 'Server', self.configParser.get("server", "mysql_ip"))
-		parser.set('DatabaseServer', 'UserName', self.configParser.get("server", "mysql_username"))
-		parser.set('DatabaseServer', 'Database', self.configParser.get("server", "mysql_database"))
-		parser.set('DatabaseServer', 'Password', self.configParser.get("server", "mysql_password"))
+		parser.set('DatabaseServer', 'Server', self.configParser.get("mysql", "ip"))
+		parser.set('DatabaseServer', 'UserName', self.configParser.get("mysql", "username"))
+		parser.set('DatabaseServer', 'Database', self.configParser.get("mysql", "database"))
+		parser.set('DatabaseServer', 'Password', self.configParser.get("mysql", "password"))
 		parser.set('DatabaseServer', 'EnableEncrypt', 0)
 		parser.add_section('RoleStatistic')
 		parser.set('RoleStatistic', 'ListenIP', self.localIp)
@@ -471,8 +480,8 @@ class AutoConfig(object):
 		parser.add_section('Version')
 		parser.set('Version', 'Version', "bishop2")
 		parser.add_section('Paysys')
-		parser.set('Paysys', 'IPAddress', self.configParser.get("server", "paysys_ip"))
-		parser.set('Paysys', 'Port', self.configParser.get("server", "paysys_port"))
+		parser.set('Paysys', 'IPAddress', self.configParser.get("paysys", "ip"))
+		parser.set('Paysys', 'Port', self.configParser.get("paysys", "port"))
 		parser.set('Paysys', 'UserName', self.paysys_regname)
 		parser.set('Paysys', 'Password', self.paysys_regpasswd)
 		parser.set('Paysys', 'SendRecvTimeout', 60000)
@@ -518,7 +527,7 @@ class AutoConfig(object):
    		parser = ConfigParser.ConfigParser()
 		parser.optionxform = str
 		parser.add_section('Gmc')
-		parser.set('Gmc', 'Address', self.configParser.get("server", "paysys_ip"))
+		parser.set('Gmc', 'Address', self.configParser.get("paysys", "ip"))
 		parser.set('Gmc', 'LocalAddr', self.localIp)
 		parser.set('Gmc', 'Port', 9991)
 		parser.set('Gmc', 'Enable', 0)
@@ -579,28 +588,181 @@ class AutoConfig(object):
 		parser.add_section('Log')
 		parser.set('Log', 'FacSayLog', 1)
 		parser.add_section('DataBase')
-		parser.set('DataBase', 'DBHost', self.configParser.get("server", "mysql_ip"))
-		parser.set('DataBase', 'DBName', self.configParser.get("server", "mysql_database"))
-		parser.set('DataBase', 'LogDBName', "%s_log" %self.configParser.get("server", "mysql_database"))
-		parser.set('DataBase', 'DBUser', self.configParser.get("server", "mysql_username"))
-		parser.set('DataBase', 'DBPwd', self.configParser.get("server", "mysql_password"))
+		parser.set('DataBase', 'DBHost', self.configParser.get("mysql", "ip"))
+		parser.set('DataBase', 'DBName', self.configParser.get("mysql", "database"))
+		parser.set('DataBase', 'LogDBName', "%s_log" %self.configParser.get("mysql", "database"))
+		parser.set('DataBase', 'DBUser', self.configParser.get("mysql", "username"))
+		parser.set('DataBase', 'DBPwd', self.configParser.get("mysql", "password"))
 		parser.set('DataBase', 'DBGroup',1 )
 		parser.set('DataBase', 'DBPort', 3306)
 		parser.set('DataBase', 'EnableEncrypt', 0)
 		parser.add_section('GlobalDatabase')
-		parser.set('GlobalDatabase', 'Server', self.configParser.get("server", "mysql_ip"))
+		parser.set('GlobalDatabase', 'Server', self.configParser.get("mysql", "ip"))
 		parser.set('GlobalDatabase', 'Database', "jx2vn_global_db")
-		parser.set('GlobalDatabase', 'User', self.configParser.get("server", "mysql_username"))
-		parser.set('GlobalDatabase', 'Password', self.configParser.get("server", "mysql_password"))
+		parser.set('GlobalDatabase', 'User', self.configParser.get("mysql", "username"))
+		parser.set('GlobalDatabase', 'Password', self.configParser.get("mysql", "password"))
 		parser.set('GlobalDatabase', 'Port', 3306)
 		parser.set('GlobalDatabase', 'EnableEncrypt', 0)
 		parser.add_section('MyGlbDB')
-		parser.set('MyGlbDB', 'Server', self.configParser.get("server", "mysql_ip"))
+		parser.set('MyGlbDB', 'Server', self.configParser.get("mysql", "ip"))
 		parser.set('MyGlbDB', 'Database', "jx2vn_global_db")
-		parser.set('MyGlbDB', 'User', self.configParser.get("server", "mysql_username"))
-		parser.set('MyGlbDB', 'Password', self.configParser.get("server", "mysql_password"))
+		parser.set('MyGlbDB', 'User', self.configParser.get("mysql", "username"))
+		parser.set('MyGlbDB', 'Password', self.configParser.get("mysql", "password"))
 		parser.set('MyGlbDB', 'Port', 3306)
 		parser.set('MyGlbDB', 'EnableEncrypt', 0)
+		with file(path, 'w') as f:
+   			parser.write(f)
+
+   	def _parseGRelayConfig(self, path, ip, **kw):
+   		parser = ConfigParser.ConfigParser()
+		parser.optionxform = str
+		parser.add_section('Gmc')
+		parser.set('Gmc', 'Address', self.configParser.get("paysys", "ip"))
+		parser.set('Gmc', 'LocalAddr', ip)
+		parser.set('Gmc', 'Port', 9991)
+		parser.set('Gmc', 'Enable', 0)
+		parser.set('Gmc', 'EncryptionType', 0)
+		parser.set('Gmc', 'ReConnInterval', 20000)
+		parser.set('Gmc', 'PingInterval', 90000)		
+		parser.add_section('Bishop')
+		parser.set('Bishop', 'Address', ip)
+		parser.set('Bishop', 'LocalAddr', ip)
+		parser.set('Bishop', 'Port', 5632)
+		parser.set('Bishop', 'Enable', 0)
+		parser.set('Bishop', 'EncryptionType', 0)
+		parser.set('Bishop', 'ReConnInterval', 20000)
+		parser.set('Bishop', 'PingInterval', 90000)
+		parser.add_section('Goddess')
+		parser.set('Goddess', 'Address', ip)
+		parser.set('Goddess', 'LocalAddr', ip)
+		parser.set('Goddess', 'Port', 5001)
+		parser.set('Goddess', 'Enable', 0)
+		parser.set('Goddess', 'EncryptionType', 0)
+		parser.set('Goddess', 'CheckConnInterval', 30000)
+		parser.add_section('Relay')
+		parser.set('Relay', 'PlayerCnt', 10)
+		parser.set('Relay', 'precision', 1)
+		parser.set('Relay', 'FreeBuffer', 15)
+		parser.set('Relay', 'BufferSize', 1048576)
+		parser.set('Relay', 'backup', 0)
+		parser.add_section('Host')
+		parser.set('Host', 'bLogSocket', 1)
+		parser.set('Host', 'LocalAddr', ip)
+		parser.set('Host', 'ListenPort', 5003)
+		parser.set('Host', 'SendRecvTimeout', 60000)
+		parser.set('Host', 'LoopTime', 50)
+		parser.set('Host', 'PingTime', 60000)
+		parser.set('Host', 'PlayerCnt', 10)
+		parser.set('Host', 'Precision', 1)
+		parser.set('Host', 'FreeBuffer', 15)
+		parser.set('Host', 'BufferSize', 1048576)
+		parser.add_section('Chat')
+		parser.set('Chat', 'LocalAddr', ip)
+		parser.set('Chat', 'ListenPort', 5004)
+		parser.set('Chat', 'SendRecvTimeout', 60000)
+		parser.set('Chat', 'LoopTime', 50)
+		parser.set('Chat', 'PlayerCnt', 10)
+		parser.set('Chat', 'Precision', 1)
+		parser.set('Chat', 'FreeBuffer', 15)
+		parser.set('Chat', 'BufferSize', 409600)
+		parser.add_section('Tong')
+		parser.set('Tong', 'LocalAddr', ip)
+		parser.set('Tong', 'ListenPort', 5005)
+		parser.set('Tong', 'SendRecvTimeout', 60000)
+		parser.set('Tong', 'LoopTime', 50)
+		parser.set('Tong', 'PlayerCnt', 10)
+		parser.set('Tong', 'Precision', 1)
+		parser.set('Tong', 'FreeBuffer', 15)
+		parser.set('Tong', 'BufferSize', 1048576)
+		parser.set('Tong', 'flushinterval', 30)
+		parser.add_section('Log')
+		parser.set('Log', 'FacSayLog', 1)
+		parser.add_section('DataBase')
+		parser.set('DataBase', 'DBHost', kw["host"])
+		parser.set('DataBase', 'DBName', kw["db"])
+		parser.set('DataBase', 'LogDBName', "%s_log" %kw["db"])
+		parser.set('DataBase', 'DBUser', kw["user"])
+		parser.set('DataBase', 'DBPwd', kw["passwd"])
+		parser.set('DataBase', 'DBGroup',1 )
+		parser.set('DataBase', 'DBPort', 3306)
+		parser.set('DataBase', 'EnableEncrypt', 0)
+		parser.add_section('GlobalDatabase')
+		parser.set('GlobalDatabase', 'Server', kw["host"])
+		parser.set('GlobalDatabase', 'Database', "jx2vn_global_db")
+		parser.set('GlobalDatabase', 'User', kw["user"])
+		parser.set('GlobalDatabase', 'Password', kw["passwd"])
+		parser.set('GlobalDatabase', 'Port', 3306)
+		parser.set('GlobalDatabase', 'EnableEncrypt', 0)
+		parser.add_section('MyGlbDB')
+		parser.set('MyGlbDB', 'Server', kw["host"])
+		parser.set('MyGlbDB', 'Database', "jx2vn_global_db")
+		parser.set('MyGlbDB', 'User', kw["user"])
+		parser.set('MyGlbDB', 'Password', kw["passwd"])
+		parser.set('MyGlbDB', 'Port', 3306)
+		parser.set('MyGlbDB', 'EnableEncrypt', 0)
+		with file(path, 'w') as f:
+   			parser.write(f)
+
+   	def _parseRouterConfig(self, path, *param):
+   		if len(param) != 2:
+   			self.log.error("can not get mainip and subip %s! abort." %str(param))
+   			exit()
+   		mainip = param[0]
+   		subip = param[-1]
+   		parser = ConfigParser.ConfigParser()
+		parser.optionxform = str
+		parser.add_section('BaseInfo')
+		parser.set('BaseInfo', 'IOTimeout', 0)
+		parser.set('BaseInfo', 'ReconnectCycle', 0)
+		parser.set('BaseInfo', 'PingCycle', 0)
+		parser.set('BaseInfo', 'WorkLoopCycle', 0)
+		parser.set('BaseInfo', 'SaveRoleData', 0)
+		parser.set('BaseInfo', 'LocalIP', mainip)
+		parser.set('BaseInfo', 'ExternalIP', mainip)
+		parser.set('BaseInfo', 'Port', 8888)
+		parser.set('BaseInfo', 'MaxPlayer', 20)
+		parser.add_section('LocalAddrList')
+		parser.set('LocalAddrList', 'LocAddrCount', 2)
+		parser.set('LocalAddrList', 'LocAddr_0', mainip)
+		parser.set('LocalAddrList', 'LocAddr_1', subip)
+		parser.add_section('LocalGSSrvInfo')
+		parser.set('LocalGSSrvInfo', 'GameServerCount', 1)
+		parser.set('LocalGSSrvInfo', 'LocalAddr', mainip)
+		parser.set('LocalGSSrvInfo', 'BishopSrvOpenPort', 8871)
+		parser.set('LocalGSSrvInfo', 'GoddessSrvOpenPort', 8872)
+		parser.set('LocalGSSrvInfo', 'RelayHostSrvOpenPort', 8873)
+		parser.set('LocalGSSrvInfo', 'RelayChatSrvOpenPort', 8874)
+		parser.set('LocalGSSrvInfo', 'RelayTongSrvOpenPort', 8875)
+		parser.add_section('LocalRelayInfo')
+		parser.set('LocalRelayInfo', 'LocRelayAddr', mainip)
+		parser.set('LocalRelayInfo', 'LocRelayHostPort', 5003)
+		parser.set('LocalRelayInfo', 'LocRelayChatPort', 5004)
+		parser.set('LocalRelayInfo', 'LocRelayTongPort', 5005)
+		parser.add_section('OriginGroupInfo')
+		parser.set('OriginGroupInfo', 'OriginGroupCount', 1)
+		parser.add_section('PATH')
+		parser.set('PATH', 'ScriptFolder', "script/")
+		parser.set('PATH', 'ScriptFileName', "routerscript.lua")
+		parser.add_section('OriginGroupInfo_0')
+		originIP = None
+		while True:
+			ip = raw_input("please input Origin Gateway Ip Address:")
+			ipformat = ip.split('.')
+			if len(ipformat) != 4 or len(filter(lambda x: x >= 0 and x <= 255, map(int, filter(lambda x: x.isdigit(), ipformat)))) != 4:
+				self.log.error("does not conform to the rules, input again!")
+				continue
+			if self._checkYesOrNO("your IP is '%s', right?(y/N):" %ip):
+				originIP = ip
+				break
+		parser.set('OriginGroupInfo_0', 'GroupName', originIP.split(".")[-1])
+		parser.set('OriginGroupInfo_0', 'BishopAddr', originIP)
+		parser.set('OriginGroupInfo_0', 'BishopPort', 5633)
+		parser.set('OriginGroupInfo_0', 'GoddessAddr', originIP)
+		parser.set('OriginGroupInfo_0', 'GoddessPort', 5001)
+		parser.set('OriginGroupInfo_0', 'RelayAddr', originIP)		
+		parser.set('OriginGroupInfo_0', 'RelayHostPort', 5003)
+		parser.set('OriginGroupInfo_0', 'RelayChatPort', 5004)
+		parser.set('OriginGroupInfo_0', 'RelayTongPort', 5005)
 		with file(path, 'w') as f:
    			parser.write(f)
 
@@ -616,7 +778,15 @@ class AutoConfig(object):
 		self._extractFiles(dstPath, RC_RELAY_LIST)
 		self._parseIniFile(dstPath, "relay.ini", self._parseRelayConfig)
 
-	def _configGateway(self, name, root, resource, catalog, func):
+	def _configGRelay(self, dstPath, *param, **kw):
+		self._extractFiles(dstPath, RC_RELAY_LIST)
+		self._parseIniFile(dstPath, "relay.ini", self._parseGRelayConfig, *param, **kw)
+
+	def _configRouter(self, dstPath, *param):
+		self._extractFiles(dstPath, RC_ROUTER_LIST)
+		self._parseIniFile(dstPath, "Router.ini", self._parseRouterConfig, *param)
+
+	def _configGateway(self, name, root, resource, catalog, func, *param, **kw):
 		self.log.info("================================================")
 		self.log.info("==> begin to config %s ..." %name)
 		dstPath = os.path.join(root, name)
@@ -628,13 +798,28 @@ class AutoConfig(object):
 			self.log.error("can not find '%s' path" %srcPath)
 			return False
 		self.copyFolder(srcPath, dstPath)
-		specialpath = os.path.join(resource, self.configParser.get("server", "special_catalog"), name)
+		special_catalog = self.configParser.get("server", "special_catalog")
+		specialpath = os.path.join(resource, special_catalog, name)
 		if not os.path.isdir(specialpath):
 			self.log.error("can not find '%s' path" %specialpath)
 			return False
 		self.copyFolder(specialpath, dstPath)
 		self._extractLibrary(dstPath)
-		func(dstPath)
+		if len(param) == 0:
+			func(dstPath)
+		else:
+			srcPath = os.path.join(src, "G%s" %name)
+			if not os.path.isdir(srcPath):
+				self.log.error("can not find '%s' path" %srcPath)
+			else:
+				self.copyFolder(srcPath, dstPath)
+			special_catalog = self.configParser.get("server", "special_catalog")
+			specialpath = os.path.join(resource, special_catalog, "G%s" %name)
+			if not os.path.isdir(specialpath):
+				self.log.error("can not find '%s' path" %specialpath)
+			else:
+				self.copyFolder(specialpath, dstPath)
+			func(dstPath, *param, **kw)
 		self.log.info("==> config %s finished!" %name)
 
 	def _parseGamesvr(self, path):
@@ -673,9 +858,55 @@ class AutoConfig(object):
 		with file(path, 'w') as f:
    			parser.write(f)
 
-	def _configGameSvr(self, root, resource, catalog):
+   	def _configGs(self, path):
+   		self._parseIniFile(path, "servercfg.ini", self._parseGamesvr)
+
+   	def _parseGGamesvr(self, path, ip):
+		parser = ConfigParser.ConfigParser()
+		parser.optionxform = str
+		parser.add_section('Server')
+		parser.set('Server', 'ServerCount', 5)
+		parser.set('Server', 'ServerIndex', 6)
+		parser.set('Server', 'RealmType', 1)
+		parser.set('Server', 'IsMatchRealm', "true")
+		parser.set('Server', 'bLogRelayPacket', 1)
+		parser.set('Server', 'IS_KINGSOFT_INNER_VERSION_acc_jh34ji84r347e8T56', 0)
+		parser.set('Server', 'IS_EXP_SVR', 0)
+		parser.set('Server', 'IS_INTERNAL_TEST_SVR', 1)
+		parser.add_section('Gateway')
+		parser.set('Gateway', 'Ip', ip)
+		parser.set('Gateway', 'Port', 8871)
+		parser.add_section('Database')
+		parser.set('Database', 'Ip', ip)
+		parser.set('Database', 'Port', 8872)
+		parser.add_section('Transfer')
+		parser.set('Transfer', 'Ip', ip)
+		parser.set('Transfer', 'Port', 8873)
+		parser.add_section('Chat')
+		parser.set('Chat', 'Ip', ip)
+		parser.set('Chat', 'Port', 8874)
+		parser.add_section('Tong')
+		parser.set('Tong', 'Ip', ip)
+		parser.set('Tong', 'Port', 8875)
+		parser.add_section('GameServer')
+		parser.set('GameServer', 'Port', 8889)
+		parser.set('GameServer', 'GM', 1)
+		parser.add_section('Net')
+		parser.set('Net', 'LocalIP', ip)
+		parser.set('Net', 'ExternalIP', ip)
+		parser.add_section('Overload')
+		parser.set('Overload', 'MaxPlayer', 2000)
+		parser.set('Overload', 'Precision', 50)
+		with file(path, 'w') as f:
+   			parser.write(f)
+
+   	def _configGGs(self, path, *param):
+   		self._parseIniFile(path, "servercfg.ini", self._parseGGamesvr, *param)
+
+	def _configGameSvr(self, root, resource, catalog, func, *param):
 		self.log.info("================================================")
 		name = "GameSvr"
+		extname = "GGameSvr"
 		self.log.info("==> begin to config %s ..." %name)
 		dstPath = os.path.join(root, name)
 		if not self._makeDir(dstPath):
@@ -700,26 +931,96 @@ class AutoConfig(object):
 			self.log.error("can not find '%s' path" %settingsPath)
 			return False
 		self.copyFolder(settingsPath, dstPath)
-		specialpath = os.path.join(resource, self.configParser.get("server", "special_catalog"), name)
+		special_catalog = self.configParser.get("server", "special_catalog")
+		specialpath = os.path.join(resource, special_catalog, name)
 		if not os.path.isdir(specialpath):
 			self.log.error("can not find '%s' path" %specialpath)
 			return False
 		self.copyFolder(specialpath, dstPath)
 		self._extractLibrary(dstPath)
 		self._extractFiles(dstPath, RC_GAMESVR_LIST)
-		self._parseIniFile(dstPath, "servercfg.ini", self._parseGamesvr)
+		if len(param) == 0:
+			func(dstPath)
+		else:
+			srcPath = os.path.join(resource, catalog[0], extname)
+			if not os.path.isdir(srcPath):
+				self.log.error("can not find '%s' path" %srcPath)
+			else:
+				self.copyFolder(srcPath, dstPath)
+			specialpath = os.path.join(resource, special_catalog, extname)
+			if not os.path.isdir(specialpath):
+				self.log.error("can not find '%s' path" %specialpath)
+			else:
+				self.copyFolder(specialpath, dstPath)
+			func(dstPath, *param)
 		self._removeFileOrDir(os.path.join(dstPath, "dynamic_pwd.ini"))
 		self.log.info("==> config %s finished!" %name)
 
-	def configMysql(self):
+	def configServer(self):
+		self.log.info("================================================")
+		self.log.info("Prepare to config server!")
+		if not os.path.exists(RC_COMMON_PACK):
+			self.log.error("can not find '%s', abort!!!" %RC_COMMON_PACK)
+			self.log.info("please run program with '-p', packaged programs and librarys!")
+			return False
+		if not self.configMysql() and not self._checkYesOrNO("mysql operation failed, continue?(y/N):"):
+			self.log.info("user cancelled!!!")
+			return True
+		if not self.registerPaysys(self.paysys_regname, self.paysys_regpasswd) and \
+			not self._checkYesOrNO("register paysys operation failed, continue?(y/N):"):
+			self.log.info("user cancelled!!!")
+			return True
+		root = self.configParser.get("server", "home").strip()
+		if not self._makeDir(root):
+			return False
+		resource = self.configParser.get("server", "resource").strip()
+		if not os.path.isdir(resource):
+			self.log.error("can not find '%s', please check '%s' file" %(resource, self.config))
+			return False
+		catalog = self.configParser.get("server", "catalog").split(',')
+		self._configGateway("Goddess", root, resource, catalog, self._configGoddess)
+		self._configGateway("Bishop", root, resource, catalog, self._configBishop)
+		self._configGateway("Relay", root, resource, catalog, self._configRelay)
+		self._configGameSvr(root, resource, catalog, self._configGs)
+		self.log.info("==> config server finished!")
+
+	def configRouter(self):
+		self.log.info("================================================")
+		self.log.info("Prepare to config GGS!")
+		if not os.path.exists(RC_COMMON_PACK):
+			self.log.error("can not find '%s', abort!!!" %RC_COMMON_PACK)
+			self.log.info("please run program with '-p', packaged programs and librarys!")
+			return False
+		mysql = dict()
+		self.log.info("please input router's mysql information:")
+		mysql["host"] = raw_input("mysql IP address:")
+		mysql["user"] = raw_input("mysql user name:")
+		mysql["passwd"] = raw_input("mysql user passwd:")
+		mysql["port"] = int(raw_input("mysql port(e.g:3306):"))
+		mysql["db"] = raw_input("mysql database name:")
+		if not self._configMysql(**mysql) and not self._checkYesOrNO("mysql operation failed, continue?(y/N):"):
+			self.log.info("user cancelled!!!")
+			return True
+		root = self.configParser.get("router", "home").strip()
+		if not self._makeDir(root):
+			return False
+		resource = self.configParser.get("router", "resource").strip()
+		if not os.path.isdir(resource):
+			self.log.error("can not find '%s', please check '%s' file" %(resource, self.config))
+			return False
+		catalog = self.configParser.get("server", "catalog").split(',')
+		self.log.info("router need two IPs:")
+		mainip = raw_input("main IP address:")
+		subip = raw_input("sub IP address:")
+		self._configGameSvr(root, resource, catalog, self._configGGs, mainip)
+		self._configGateway("Relay", root, resource, catalog, self._configGRelay, mainip, **mysql)
+		self._configGateway("Router", root, resource, catalog, self._configRouter, mainip, subip)
+		self.log.info("==> config GGS finished!")
+
+	def _configMysql(self, **kw):
 		self.log.info("==> connect and operate mysql ...")
-		host = self.configParser.get("server", "mysql_ip")
-		user = self.configParser.get("server", "mysql_username")
-		passwd = self.configParser.get("server", "mysql_password")
-		db = self.configParser.get("server", "mysql_database")
-		port = self.configParser.getint("server", "mysql_port")
 		try:
-			conn = MySQLdb.connect(host=host, user=user, passwd=passwd, port=port)
+			conn = MySQLdb.connect(host=kw["host"], user=kw["user"], passwd=kw["passwd"], port=kw["port"])
 			cur = conn.cursor()
 			cur.execute('select @@version')
 			format = map(lambda x: x[0], cur.fetchall())
@@ -735,6 +1036,7 @@ class AutoConfig(object):
 					return False
 			cur.execute('show databases')
 			format = map(lambda x: x[0], cur.fetchall())
+			db = kw["db"]
 			if db not in format:
 				cur.execute('create database if not exists %s' %db)
 				self.log.info("create database '%s' ..." %db)
@@ -743,6 +1045,11 @@ class AutoConfig(object):
 				cur.execute('create database if not exists %s' %("%s_log" %db))
 				self.log.info("create database '%s' ..." %("%s_log" %db))
 			self.log.info("find database '%s' OK!" %("%s_log" %db))
+			globaldatabase = "jx2vn_global_db"
+			if globaldatabase not in format:
+				cur.execute('create database if not exists %s' %globaldatabase)
+				self.log.info("create database '%s' ..." %globaldatabase)
+			self.log.info("find database '%s' OK!" %globaldatabase)
 			conn.commit()
 			cur.close()
 			conn.close()
@@ -752,20 +1059,27 @@ class AutoConfig(object):
 		self.log.info("==> connect and operate mysql finished!")
 		return True
 
+	def configMysql(self):
+		host = self.configParser.get("mysql", "ip")
+		user = self.configParser.get("mysql", "username")
+		passwd = self.configParser.get("mysql", "password")
+		port = self.configParser.getint("mysql", "port")
+		db = self.configParser.get("mysql", "database")
+		return self._configMysql(host=host, user=user, passwd=passwd, port=port, db=db)
+
 	def registerPaysys(self, name, passwd):
 		self.log.info("================================================")
-		ora_ip = self.configParser.get("server", "paysys_ip")
-		ora_port = self.configParser.get("server", "ps_listen_port")
-		ora_server_name = self.configParser.get("server", "ps_server_name")
+		ora_ip = self.configParser.get("paysys", "ip")
+		ora_port = self.configParser.get("paysys", "listen_port")
+		ora_server_name = self.configParser.get("paysys", "server_name")
 		ora_dsn = cx_Oracle.makedsn(ora_ip, ora_port, ora_server_name)
-		username = self.configParser.get("server", "ps_manage_user")
-		password = self.configParser.get("server", "ps_manage_passwd")
+		username = self.configParser.get("paysys", "manage_user")
+		password = self.configParser.get("paysys", "manage_passwd")
 		self.log.info("==> register local machine to paysys(%s:%s/%s)" %(ora_ip, ora_port, ora_server_name))
 		self.log.info("register name: %s" %name)
 		self.log.info("register passwd: %s" %passwd)
 		self.log.info("machine IP: %s" %self.localIp)
 		self.log.info("machine MAC: %s" %self.localMac)
-		os.environ["ORACLE_HOME"] = os.path.abspath(".")
 		try:
 			connection = cx_Oracle.Connection(username, password, ora_dsn)
 			cursor = connection.cursor()
@@ -798,34 +1112,6 @@ class AutoConfig(object):
 		self.log.info("==> register paysys gateway success !!!")
 		return True
 
-	def configServer(self):
-		self.log.info("================================================")
-		self.log.info("Prepare to config server!")
-		if not os.path.exists(RC_COMMON_PACK):
-			self.log.error("can not find '%s', abort!!!" %RC_COMMON_PACK)
-			self.log.info("please run program with 'prog -p', packaged programs and librarys!")
-			return False
-		if not self.configMysql() and not self._checkYesOrNO("mysql operation failed, continue?(y/N):"):
-			self.log.info("user cancelled!!!")
-			return True
-		if not self.registerPaysys(self.paysys_regname, self.paysys_regpasswd) and \
-			not self._checkYesOrNO("register paysys operation failed, continue?(y/N):"):
-			self.log.info("user cancelled!!!")
-			return True
-		root = self.configParser.get("server", "home").strip()
-		if not self._makeDir(root):
-			return False
-		resource = self.configParser.get("server", "resource").strip()
-		if not os.path.isdir(resource):
-			self.log.error("can not find '%s', please check '%s' file" %(resource, self.config))
-			return False
-		catalog = self.configParser.get("server", "catalog").split(',')
-		self._configGateway("Goddess", root, resource, catalog, self._configGoddess)
-		self._configGateway("Bishop", root, resource, catalog, self._configBishop)
-		self._configGateway("Relay", root, resource, catalog, self._configRelay)
-		self._configGameSvr(root, resource, catalog)
-		self.log.info("==> config server finished!")
-
 def main():
 	#check python version
 	if sys.version_info[0] > 2:
@@ -843,11 +1129,13 @@ def main():
 	parser.add_option(
 		"-s", "--server", action="store_true", dest="s", help="jv2 server automatic configuration")
 	parser.add_option(
+		"-t", "--router", action="store_true", dest="t", help="jv2 router automatic configuration")
+	parser.add_option(
 		"-r", "--registerpaysys", action="store_true", dest="r", help="automatic register machine to paysys")
 	parser.add_option(
 		"-m", "--operatemysql", action="store_true", dest="m", help="connect mysql and check version, create user table")
 	opts, args = parser.parse_args()
-	if opts.p != True and opts.c != True and opts.s != True and opts.r != True and opts.m != True:
+	if not opts.p and not opts.c and not opts.s and not opts.t and not opts.r and not opts.m:
 		parser.print_help()
 		return False
 
@@ -870,6 +1158,14 @@ def main():
 		parser.print_help()
 		return False
 
+	if opts.r:
+		reg_name = raw_input("please input register name:")
+		reg_passwd = raw_input("please input register passwd:")
+		config.checkIpCorrectness()
+		config.checkMacCorrectness()
+		config.registerPaysys(reg_name, reg_passwd)
+	if opts.m:
+		config.configMysql()
 	if opts.p:
 		config.packLibrary(RC_COMMON_PACK)
 	if opts.c:
@@ -879,14 +1175,8 @@ def main():
 		config.checkIpCorrectness()
 		config.checkMacCorrectness()
 		config.configServer()
-	if opts.r:
-		reg_name = raw_input("please input register name:")
-		reg_passwd = raw_input("please input register passwd:")
-		config.checkIpCorrectness()
-		config.checkMacCorrectness()
-		config.registerPaysys(reg_name, reg_passwd)
-	if opts.m:
-		config.configMysql()
+	if opts.t:
+		config.configRouter()
 
 	raw_input("\nplease input any key exit...")
 
