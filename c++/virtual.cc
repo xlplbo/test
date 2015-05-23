@@ -11,6 +11,7 @@ public:
     doHealthValue();
     printf("after %s\n", __FUNCTION__);
   }
+  virtual ~GameCharacter() {}
 private:
   virtual void doHealthValue()
   {
@@ -89,6 +90,7 @@ public:
   virtual int calc(const GameCharacter4& gc) const
   {
     printf("CHealthCalc::%s\n", __FUNCTION__);
+    return 1;
   }
 };
 CHealthCalc defaultCHealthCalc;

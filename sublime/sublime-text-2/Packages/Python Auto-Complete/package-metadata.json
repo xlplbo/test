@@ -1,0 +1,1 @@
+{"description": "A Sublime Text 2 plugin which adds additional auto-completion capability to Python scripts", "url": "https://github.com/eliquious/Python-Auto-Complete", "platforms": ["*"], "version": "2013.03.06.17.59.34", "sublime_text": "*", "dependencies": []}

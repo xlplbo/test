@@ -1,0 +1,6 @@
+{
+	"env":
+	{
+		"GOPATH": "$HOME/gocode:$GS_GOPATH"
+	}
+}
