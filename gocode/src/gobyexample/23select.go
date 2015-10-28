@@ -26,6 +26,8 @@ func Select() {
 			fmt.Println(msg2)
 		case <-time.After(time.Second * 1): //等待超时
 			fmt.Println("timeout")
+			//default: //非阻塞通道
+			//	fmt.Println("no activity")
 		}
 	}
 }

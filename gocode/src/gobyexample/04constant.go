@@ -3,10 +3,10 @@ package main
 import "fmt"
 import "math"
 
-const s string = "constant"
+const cs string = "constant"
 
 func constant() {
-	fmt.Println(s)
+	fmt.Println(cs)
 
 	const n = 500000000
 

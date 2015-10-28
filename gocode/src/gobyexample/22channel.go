@@ -49,3 +49,40 @@ func Channel4() {
 	pong(pings, pongs)
 	fmt.Println(<-pongs)
 }
+
+func Channel5() {
+	jobs := make(chan int, 5)
+	done := make(chan bool)
+
+	go func() {
+		for {
+			j, more := <-jobs
+			if more {
+				fmt.Println("receive job", j)
+			} else {
+				fmt.Println("receive all jobs")
+				done <- true
+				return
+			}
+		}
+	}()
+
+	for j := 1; j <= 3; j++ {
+		jobs <- j
+		fmt.Println("sent job", j)
+	}
+	close(jobs) //关闭通道
+	fmt.Println("sent all jobs")
+	<-done
+}
+
+func Channel6() {
+	queue := make(chan string, 2)
+	queue <- "one"
+	queue <- "two"
+	close(queue)
+
+	for elem := range queue {
+		fmt.Println(elem)
+	}
+}
