@@ -43,5 +43,11 @@ func main() {
 	//testString()
 	//testFormat()
 	//testRegexp()
-	testJson()
+	//testJson()
+	//testUrl()
+	//testSha1()
+	//testBase64()
+	//testFlag()
+	//testCommad()
+	testSignal()
 }
